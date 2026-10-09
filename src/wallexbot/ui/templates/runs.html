@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Runs History</h2>
+    <div class="badge badge-paper">PAPER MODE</div>
+
+    <table id="runs-table">
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Status</th>
+                <th>Market</th>
+                <th>Mode</th>
+                <th>Started</th>
+                <th>Stopped</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody hx-get="/api/runs" hx-trigger="load, every 5s" hx-target="this">
+            <tr><td colspan="7">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div id="run-detail" class="card" style="margin-top: 1rem; display: none;">
+    <h3>Run Details: <span id="run-detail-id"></span></h3>
+    <button onclick="closeRunDetail()">Close</button>
+    
+    <div class="grid" style="margin-top: 1rem;">
+        <div class="card">
+            <h4>PnL</h4>
+            <div id="run-pnl"></div>
+            <canvas id="pnl-chart" height="200"></canvas>
+        </div>
+        <div class="card">
+            <h4>Grid</h4>
+            <div id="run-grid"></div>
+        </div>
+    </div>
+
+    <div class="grid" style="margin-top: 1rem;">
+        <div class="card">
+            <h4>Orders</h4>
+            <table id="run-orders">
+                <thead>
+                    <tr><th>ID</th><th>Side</th><th>Price</th><th>Qty</th><th>Status</th><th>Filled</th></tr>
+                </thead>
+                <tbody hx-get="/api/runs/{{run_id}}/orders" hx-trigger="load" hx-target="this"></tbody>
+            </table>
+        </div>
+        <div class="card">
+            <h4>Fills</h4>
+            <table id="run-fills">
+                <thead>
+                    <tr><th>Time</th><th>Price</th><th>Qty</th><th>Fee</th><th>Side</th></tr>
+                </thead>
+                <tbody hx-get="/api/runs/{{run_id}}/fills" hx-trigger="load" hx-target="this"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openRunDetail(runId) {
+        document.getElementById('run-detail').style.display = 'block';
+        document.getElementById('run-detail-id').textContent = runId;
+        document.getElementById('run-detail').setAttribute('data-run-id', runId);
+        
+        // Load details
+        htmx.ajax('GET', `/api/runs/${runId}/pnl`, {target: '#run-pnl', swap: 'innerHTML'});
+        htmx.ajax('GET', `/api/runs/${runId}/grid`, {target: '#run-grid', swap: 'innerHTML'});
+    }
+
+    function closeRunDetail() {
+        document.getElementById('run-detail').style.display = 'none';
+    }
+
+    // Table row click handler
+    document.body.addEventListener('click', function(e) {
+        const row = e.target.closest('tr[data-run-id]');
+        if (row) {
+            openRunDetail(row.dataset.runId);
+        }
+    });
+</script>
+{% endblock %}

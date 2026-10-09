@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Paper Trading Dashboard</h2>
+    <div class="badge badge-paper" style="font-size: 1.2rem; padding: 0.5rem 1rem;">PAPER MODE - LIVE PRICES</div>
+
+    <div id="status-bar" class="grid" style="margin: 1rem 0; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+        <div class="card">
+            <div id="connection-status" class="badge badge-halted">DISCONNECTED</div>
+            <div id="run-status" class="badge badge-halted">NOT RUNNING</div>
+        </div>
+        <div class="card">
+            <strong>Price:</strong> <span id="current-price">--</span> TMN
+        </div>
+        <div class="card">
+            <strong>Equity:</strong> <span id="equity">--</span> TMN
+        </div>
+        <div class="card">
+            <strong>Realized PnL:</strong> <span id="realized-pnl" style="color: green;">--</span> TMN
+        </div>
+        <div class="card">
+            <strong>Unrealized PnL:</strong> <span id="unrealized-pnl" style="color: orange;">--</span> TMN
+        </div>
+        <div class="card">
+            <strong>Cycles:</strong> <span id="cycles-completed">0</span>
+        </div>
+        <div class="card">
+            <strong>Fees Paid:</strong> <span id="fees-paid">0</span> TMN
+        </div>
+    </div>
+
+    <div class="grid" style="margin-top: 1rem;">
+        <div class="card" style="flex: 2;">
+            <h3>Price Chart & Grid Ladder</h3>
+            <div id="paper-chart" class="chart-container"></div>
+        </div>
+        <div class="card" style="flex: 1;">
+            <h3>Balances</h3>
+            <table id="balances-table">
+                <thead>
+                    <tr><th>Asset</th><th>Free</th><th>Locked</th><th>Total</th></tr>
+                </thead>
+                <tbody id="balances-body">
+                    <tr><td colspan="4">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="grid" style="margin-top: 1rem;">
+        <div class="card">
+            <h3>Open Orders</h3>
+            <table id="open-orders-table">
+                <thead>
+                    <tr><th>Level</th><th>Side</th><th>Price</th><th>Qty</th><th>Filled</th><th>Actions</th></tr>
+                </thead>
+                <tbody hx-get="/api/runs/{{run_id}}/orders" hx-trigger="load, every 2s" hx-target="this"></tbody>
+            </table>
+        </div>
+        <div class="card">
+            <h3>Recent Fills</h3>
+            <table id="fills-table">
+                <thead>
+                    <tr><th>Time</th><th>Side</th><th>Price</th><th>Qty</th><th>Fee</th></tr>
+                </thead>
+                <tbody hx-get="/api/runs/{{run_id}}/fills" hx-trigger="load, every 2s" hx-target="this"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+        <button id="start-btn" onclick="startPaper()">Start Paper Trading</button>
+        <button id="pause-btn" onclick="pausePaper()" disabled>Pause</button>
+        <button id="resume-btn" onclick="resumePaper()" disabled style="display: none;">Resume</button>
+        <button id="stop-btn" onclick="stopPaper()" disabled>Stop</button>
+        <button id="kill-btn" onclick="killPaper()" disabled style="background: #dc3545;">Kill Switch</button>
+    </div>
+</div>
+
+<script>
+    let priceChart = null;
+    let gridLines = { buy: null, sell: null };
+    let ws = null;
+    let runId = null;
+
+    // Initialize chart
+    function initChart() {
+        const ctx = document.getElementById('paper-chart');
+        if (!ctx) return;
+        
+        priceChart = LightweightCharts.createChart(ctx, {
+            width: ctx.clientWidth,
+            height: 400,
+            layout: { backgroundColor: '#ffffff', textColor: '#333' },
+            grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
+        });
+
+        const candleSeries = priceChart.addCandlestickSeries();
+        gridLines.buy = priceChart.addLineSeries({ color: 'green', lineWidth: 1, lineStyle: 2 });
+        gridLines.sell = priceChart.addLineSeries({ color: 'red', lineWidth: 1, lineStyle: 2 });
+        
+        return candleSeries;
+    }
+
+    async function startPaper() {
+        const config = getConfigFromConfigurePage();
+        if (!config) {
+            alert('Please configure grid first on Configure page');
+            return;
+        }
+
+        const response = await fetch('/api/paper-runs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config })
+        });
+        const data = await response.json();
+        runId = data.id;
+        
+        updateButtons('running');
+        connectWebSocket();
+    }
+
+    async function pausePaper() {
+        if (!runId) return;
+        await fetch(`/api/runs/${runId}/pause`, { method: 'POST' });
+        updateButtons('paused');
+    }
+
+    async function resumePaper() {
+        if (!runId) return;
+        await fetch(`/api/runs/${runId}/resume`, { method: 'POST' });
+        updateButtons('running');
+    }
+
+    async function stopPaper() {
+        if (!runId) return;
+        await fetch(`/api/runs/${runId}/stop`, { method: 'POST' });
+        updateButtons('stopped');
+        disconnectWebSocket();
+    }
+
+    async function killPaper() {
+        if (!runId) return;
+        if (!confirm('Kill switch will cancel ALL orders immediately. Continue?')) return;
+        await fetch(`/api/runs/${runId}/kill`, { method: 'POST' });
+        updateButtons('halted');
+        disconnectWebSocket();
+    }
+
+    function updateButtons(state) {
+        const btns = { start: 'start-btn', pause: 'pause-btn', resume: 'resume-btn', stop: 'stop-btn', kill: 'kill-btn' };
+        
+        document.getElementById(btns.start).disabled = state !== 'stopped' && state !== 'halted';
+        document.getElementById(btns.pause).disabled = state !== 'running';
+        document.getElementById(btns.resume).disabled = state !== 'paused';
+        document.getElementById(btns.resume).style.display = state === 'paused' ? 'inline-block' : 'none';
+        document.getElementById(btns.stop).disabled = state === 'stopped' || state === 'halted';
+        document.getElementById(btns.kill).disabled = state === 'stopped' || state === 'halted';
+
+        const statusEl = document.getElementById('run-status');
+        statusEl.textContent = state.toUpperCase();
+        statusEl.className = 'badge badge-' + (state === 'running' ? 'running' : state === 'paused' ? 'paused' : 'halted');
+    }
+
+    function connectWebSocket() {
+        if (!runId) return;
+        ws = new WebSocket(`ws://${location.host}/api/stream?run_id=${runId}`);
+        
+        ws.onopen = () => {
+            document.getElementById('connection-status').textContent = 'CONNECTED';
+            document.getElementById('connection-status').className = 'badge badge-running';
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            handleWebSocketMessage(data);
+        };
+        
+        ws.onclose = () => {
+            document.getElementById('connection-status').textContent = 'DISCONNECTED';
+            document.getElementById('connection-status').className = 'badge badge-halted';
+            // Auto-reconnect
+            setTimeout(connectWebSocket, 5000);
+        };
+    }
+
+    function disconnectWebSocket() {
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+    }
+
+    function handleWebSocketMessage(data) {
+        switch(data.type) {
+            case 'price':
+                updatePrice(data.price);
+                break;
+            case 'fill':
+                updateFill(data);
+                break;
+            case 'order':
+                updateOrder(data);
+                break;
+            case 'pnl':
+                updatePnl(data);
+                break;
+            case 'status':
+                updateStatus(data);
+                break;
+        }
+    }
+
+    function updatePrice(price) {
+        document.getElementById('current-price').textContent = price.toLocaleString();
+        // Update chart with new candle
+    }
+
+    function updatePnl(pnl) {
+        document.getElementById('equity').textContent = pnl.equity.toLocaleString();
+        document.getElementById('realized-pnl').textContent = pnl.realized.toLocaleString();
+        document.getElementById('unrealized-pnl').textContent = pnl.unrealized.toLocaleString();
+        document.getElementById('fees-paid').textContent = pnl.fees.toLocaleString();
+    }
+
+    function updateStatus(status) {
+        document.getElementById('cycles-completed').textContent = status.cycles || 0;
+    }
+
+    function getConfigFromConfigurePage() {
+        // In real implementation, would fetch from localStorage or API
+        return {
+            exchange: { name: "wallex" },
+            market: { symbol: "USDTTMN" },
+            strategy: { grid: {
+                lower_price: "90.00",
+                upper_price: "110.00",
+                grid_count: 20,
+                mode: "arithmetic",
+                total_investment: "2000000.00"
+            }},
+            risk: { max_open_orders: 20, max_drawdown: "0.05", daily_loss_limit: "0.02" },
+            simulation: { initial_balance_quote: "2000000.00", fee_maker: "0.001", fee_taker: "0.002" },
+            logging: { level: "INFO", json: true }
+        };
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        initChart();
+        // Try to restore run_id from localStorage
+        runId = localStorage.getItem('paper_run_id');
+        if (runId) {
+            connectWebSocket();
+        }
+    });
+</script>
+{% endblock %}

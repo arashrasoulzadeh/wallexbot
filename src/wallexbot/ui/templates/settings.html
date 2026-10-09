@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Settings</h2>
+    <div class="badge badge-paper">PAPER MODE</div>
+
+    <h3>Telegram Alerts</h3>
+    <form id="telegram-form" class="grid">
+        <div class="form-group">
+            <label>Bot Token (from @BotFather)</label>
+            <input type="password" name="bot_token" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" autocomplete="off">
+            <small>Set via WALLEXBOT_TELEGRAM_TOKEN env var for security</small>
+        </div>
+        <div class="form-group">
+            <label>Chat ID</label>
+            <input type="text" name="chat_id" placeholder="123456789" autocomplete="off">
+            <small>Set via WALLEXBOT_TELEGRAM_CHAT_ID env var</small>
+        </div>
+        <div class="form-group">
+            <label>Language</label>
+            <select name="language">
+                <option value="en">English</option>
+                <option value="fa">فارسی</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Events to Notify</label>
+            <div>
+                <label><input type="checkbox" name="events" value="out_of_range" checked> Out of Range</label>
+            </div>
+            <div>
+                <label><input type="checkbox" name="events" value="risk_limit" checked> Risk Limit Hit</label>
+            </div>
+            <div>
+                <label><input type="checkbox" name="events" value="feed_disconnected" checked> Feed Disconnected</label>
+            </div>
+            <div>
+                <label><input type="checkbox" name="events" value="run_halted" checked> Run Halted</label>
+            </div>
+            <div>
+                <label><input type="checkbox" name="events" value="daily_summary"> Daily Summary</label>
+            </div>
+            <div>
+                <label><input type="checkbox" name="events" value="cycle_completed"> Cycle Completed</label>
+            </div>
+        </div>
+        <button type="button" onclick="testTelegram()">Test Notification</button>
+    </form>
+
+    <hr style="margin: 2rem 0;">
+
+    <h3>Display Preferences</h3>
+    <form id="display-form" class="grid">
+        <div class="form-group">
+            <label>Theme</label>
+            <select name="theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="auto">Auto (system)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Persian Digits</label>
+            <select name="persian_digits">
+                <option value="false">Western (0-9)</option>
+                <option value="true">Persian (۰-۹)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Date Format</label>
+            <select name="date_format">
+                <option value="gregorian">Gregorian (2024-01-15)</option>
+                <option value="jalali">Jalali (1402-10-25)</option>
+                <option value="both">Both</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Number Format</label>
+            <select name="number_format">
+                <option value="standard">Standard (1,000.00)</option>
+                <option value="persian">Persian (۱٬۰۰۰.۰۰)</option>
+            </select>
+        </div>
+    </form>
+
+    <hr style="margin: 2rem 0;">
+
+    <h3>Data Management</h3>
+    <div class="grid">
+        <div class="card">
+            <h4>Database</h4>
+            <p>SQLite database: <code>wallexbot.db</code></p>
+            <button onclick="backupDatabase()">Backup Database</button>
+            <button onclick="vacuumDatabase()">Vacuum (Optimize)</button>
+        </div>
+        <div class="card">
+            <h4>History Database</h4>
+            <p>History database: <code>wallexbot_history.db</code></p>
+            <button onclick="backupHistory()">Backup History</button>
+        </div>
+    </div>
+
+    <hr style="margin: 2rem 0;">
+
+    <h3>Advanced</h3>
+    <form id="advanced-form" class="grid">
+        <div class="form-group">
+            <label>Log Level</label>
+            <select name="log_level">
+                <option value="DEBUG">Debug</option>
+                <option value="INFO" selected>Info</option>
+                <option value="WARNING">Warning</option>
+                <option value="ERROR">Error</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>JSON Logs</label>
+            <select name="json_logs">
+                <option value="true">Yes (JSON lines)</option>
+                <option value="false">No (human readable)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Poll Interval (seconds)</label>
+            <input type="number" name="poll_interval" value="1" min="0.5" max="10" step="0.5">
+        </div>
+    </form>
+</div>
+
+<script>
+    function testTelegram() {
+        fetch('/api/notify/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: 'Test notification from Wallex Grid Bot' })
+        }).then(r => r.json()).then(data => {
+            alert(data.message || 'Test sent!');
+        });
+    }
+
+    function backupDatabase() {
+        fetch('/api/admin/backup', { method: 'POST' }).then(r => r.json()).then(data => {
+            alert(data.message);
+        });
+    }
+
+    function vacuumDatabase() {
+        fetch('/api/admin/vacuum', { method: 'POST' }).then(r => r.json()).then(data => {
+            alert(data.message);
+        });
+    }
+
+    function backupHistory() {
+        fetch('/api/admin/backup-history', { method: 'POST' }).then(r => r.json()).then(data => {
+            alert(data.message);
+        });
+    }
+
+    // Load settings from localStorage on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        const settings = JSON.parse(localStorage.getItem('wallexbot_settings') || '{}');
+        Object.keys(settings).forEach(key => {
+            const el = document.querySelector(`[name="${key}"]`);
+            if (el) el.value = settings[key];
+        });
+    });
+
+    // Save settings on change
+    document.querySelectorAll('form input, form select').forEach(el => {
+        el.addEventListener('change', () => {
+            const settings = JSON.parse(localStorage.getItem('wallexbot_settings') || '{}');
+            settings[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+            localStorage.setItem('wallexbot_settings', JSON.stringify(settings));
+        });
+    });
+</script>
+{% endblock %}

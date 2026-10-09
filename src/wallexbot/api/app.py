@@ -2,10 +2,12 @@
 
 from contextlib import asynccontextmanager
 from typing: Optional
-from fastapi import FastAPI, HTTPException, Depends
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from wallexbot.storage.repository import Repository, InMemoryRepository
@@ -68,6 +70,10 @@ def create_app(
 
     if engine_manager is None:
         engine_manager = EngineManager(repo)
+
+    # Templates
+    template_dir = Path(__file__).parent.parent / "ui" / "templates"
+    templates = Jinja2Templates(directory=str(template_dir))
 
     app = FastAPI(
         title="Wallex Grid Bot API",
@@ -132,7 +138,17 @@ def create_app(
     @app.get("/api/runs")
     async def list_runs():
         # In a real implementation, this would query the repo
-        return []
+        # For now, return mock data for UI testing
+        return [
+            {
+                "id": "run_123",
+                "status": "completed",
+                "market": "USDTTMN",
+                "mode": "arithmetic",
+                "started_at": 1705238400000,
+                "stopped_at": 1705324800000,
+            }
+        ]
 
     @app.get("/api/runs/{run_id}")
     async def get_run(run_id: str):
@@ -153,7 +169,7 @@ def create_app(
 
     @app.get("/api/runs/{run_id}/pnl")
     async def get_run_pnl(run_id: str):
-        # Placeholder
+        # Placeholder - would compute from fills
         return {"realized": "0", "unrealized": "0", "total": "0"}
 
     @app.get("/api/runs/{run_id}/grid")
@@ -235,6 +251,49 @@ def create_app(
         await engine_manager.kill_run(run_id)
         return {"status": "killed"}
 
+    # Notification test endpoint
+    @app.post("/api/notify/test")
+    async def test_notification(request: Request):
+        data = await request.json()
+        # In real implementation, would send via Telegram
+        return {"message": f"Test notification sent: {data.get('message', 'test')}"}
+
+    # Admin endpoints
+    @app.post("/api/admin/backup")
+    async def backup_database():
+        import shutil
+        import time
+        src = "wallexbot.db"
+        dst = f"wallexbot.db.backup.{int(time.time())}"
+        try:
+            shutil.copy2(src, dst)
+            return {"message": f"Backup created: {dst}"}
+        except Exception as e:
+            return {"message": f"Backup failed: {e}"}
+
+    @app.post("/api/admin/vacuum")
+    async def vacuum_database():
+        import sqlite3
+        try:
+            conn = sqlite3.connect("wallexbot.db")
+            conn.execute("VACUUM")
+            conn.close()
+            return {"message": "Database vacuumed"}
+        except Exception as e:
+            return {"message": f"Vacuum failed: {e}"}
+
+    @app.post("/api/admin/backup-history")
+    async def backup_history():
+        import shutil
+        import time
+        src = "wallexbot_history.db"
+        dst = f"wallexbot_history.db.backup.{int(time.time())}"
+        try:
+            shutil.copy2(src, dst)
+            return {"message": f"History backup created: {dst}"}
+        except Exception as e:
+            return {"message": f"Backup failed: {e}"}
+
     # WebSocket for live updates
     @app.websocket("/api/stream")
     async def websocket_stream(websocket):
@@ -247,9 +306,39 @@ def create_app(
         except Exception:
             await websocket.close()
 
+    # UI Routes - serve templates
+    @app.get("/dashboard")
+    async def dashboard(request: Request):
+        return templates.TemplateResponse("base.html", {"request": request})
+
+    @app.get("/configure")
+    async def configure_page(request: Request):
+        return templates.TemplateResponse("configure.html", {"request": request})
+
+    @app.get("/backtest")
+    async def backtest_page(request: Request):
+        return templates.TemplateResponse("backtest.html", {"request": request})
+
+    @app.get("/paper")
+    async def paper_page(request: Request):
+        return templates.TemplateResponse("paper.html", {"request": request})
+
+    @app.get("/runs")
+    async def runs_page(request: Request):
+        return templates.TemplateResponse("runs.html", {"request": request})
+
+    @app.get("/history")
+    async def history_page(request: Request):
+        return templates.TemplateResponse("history.html", {"request": request})
+
+    @app.get("/settings")
+    async def settings_page(request: Request):
+        return templates.TemplateResponse("settings.html", {"request": request})
+
     # Serve static files (UI)
     try:
-        app.mount("/static", StaticFiles(directory="src/wallexbot/ui/static"), name="static")
+        static_dir = Path(__file__).parent.parent / "ui" / "static"
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     except RuntimeError:
         pass
 
@@ -261,7 +350,7 @@ def create_app(
             <body>
                 <h1>Wallex Grid Bot Dashboard</h1>
                 <p><a href="/docs">API Documentation</a></p>
-                <p><a href="/static/index.html">UI</a></p>
+                <p><a href="/dashboard">Dashboard</a></p>
             </body>
         </html>
         """)

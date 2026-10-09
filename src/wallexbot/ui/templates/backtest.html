@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Backtest</h2>
+    <div class="badge badge-paper">PAPER MODE</div>
+
+    <form hx-post="/api/backtests" hx-target="#backtest-result" hx-swap="innerHTML" id="backtest-form">
+        <div class="grid">
+            <div class="form-group">
+                <label>Config</label>
+                <select name="config" required>
+                    <option value="default">Default (grid.example.yaml)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>From Date</label>
+                <input type="date" name="from" value="2024-01-01" required>
+            </div>
+            <div class="form-group">
+                <label>To Date</label>
+                <input type="date" name="to" value="2024-01-31" required>
+            </div>
+            <div class="form-group">
+                <label>Resolution</label>
+                <select name="resolution">
+                    <option value="60">1 Hour</option>
+                    <option value="240">4 Hours</option>
+                    <option value="1D">1 Day</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit">Run Backtest</button>
+    </form>
+
+    <div id="backtest-result" class="card" style="margin-top: 1rem;"></div>
+</div>
+
+<div class="card" style="margin-top: 1rem;">
+    <h3>Parameter Sweep</h3>
+    <form hx-post="/api/backtests/sweep" hx-target="#sweep-result" hx-swap="innerHTML" id="sweep-form">
+        <div class="grid">
+            <div class="form-group">
+                <label>Grid Count Range</label>
+                <input type="text" name="grid_count_range" value="10,20,30" placeholder="10,20,30">
+            </div>
+            <div class="form-group">
+                <label>Range % from Current</label>
+                <input type="text" name="range_pct_range" value="5,10,15" placeholder="5,10,15">
+            </div>
+            <div class="form-group">
+                <label>Mode</label>
+                <select name="mode">
+                    <option value="arithmetic">Arithmetic</option>
+                    <option value="geometric">Geometric</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit">Run Sweep</button>
+    </form>
+
+    <div id="sweep-result" class="card" style="margin-top: 1rem;"></div>
+</div>
+
+<script>
+    // Backtest form handler
+    document.getElementById('backtest-form').addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'backtest-result') {
+            renderBacktestChart();
+        }
+    });
+
+    function renderBacktestChart() {
+        const chartDiv = document.getElementById('backtest-equity-chart');
+        if (!chartDiv) return;
+
+        // Chart would be rendered here with results
+    }
+</script>
+{% endblock %}

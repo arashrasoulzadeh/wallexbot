@@ -65,6 +65,23 @@ def create_parser() -> argparse.ArgumentParser:
     ui_parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
     ui_parser.add_argument("--port", type=int, default=8080, help="Port to bind")
 
+    # suggest command
+    suggest_parser = subparsers.add_parser("suggest", help="Get intelligent grid suggestions")
+    suggest_parser.add_argument("--market", default="USDTTMN", help="Market symbol")
+    suggest_parser.add_argument("--capital", default="2000000", help="Capital in quote currency")
+
+    # optimize command
+    optimize_parser = subparsers.add_parser("optimize", help="Run parameter optimization")
+    optimize_parser.add_argument("--market", default="USDTTMN", help="Market symbol")
+    optimize_parser.add_argument("--from", dest="from_ts", required=True, help="Start date")
+    optimize_parser.add_argument("--to", dest="to_ts", required=True, help="End date")
+    optimize_parser.add_argument("--iterations", type=int, default=50, help="Random search iterations")
+
+    # regime command
+    regime_parser = subparsers.add_parser("regime", help="Check current market regime")
+    regime_parser.add_argument("--market", default="USDTTMN", help="Market symbol")
+    regime_parser.add_argument("--period", type=int, default=20, help="Lookback period")
+
     return parser
 
 
@@ -122,6 +139,12 @@ def main(args: list[str] = None) -> int:
             return cmd_report(parsed.run_id)
         elif parsed.command == "ui":
             return cmd_ui(parsed.host, parsed.port)
+        elif parsed.command == "suggest":
+            return cmd_suggest(parsed.market, parsed.capital)
+        elif parsed.command == "optimize":
+            return cmd_optimize(parsed.market, parsed.from_ts, parsed.to_ts, parsed.iterations)
+        elif parsed.command == "regime":
+            return cmd_regime(parsed.market, parsed.period)
     except KeyboardInterrupt:
         print("\nInterrupted", file=sys.stderr)
         return 130
@@ -247,6 +270,151 @@ def cmd_ui(host: str, port: int) -> int:
     print(f"Starting web dashboard on {host}:{port}")
     print("Press Ctrl+C to stop")
     # This would start the FastAPI server
+    import uvicorn
+    from wallexbot.api.app import create_app
+    from wallexbot.storage.repository import InMemoryRepository
+    
+    repo = InMemoryRepository()
+    app = create_app(repo=repo)
+    uvicorn.run(app, host=host, port=port)
+    return 0
+
+
+def cmd_suggest(market: str, capital: str) -> int:
+    """Get intelligent grid suggestions."""
+    from wallexbot.intelligence.smart_grid import suggest_range, suggest_spacing, suggest_capital_allocation, should_run_grid
+    from wallexbot.wallex.client import WallexRestClient
+    from wallexbot.domain.market import Symbol
+    from decimal import Decimal
+    
+    print(f"Analyzing {market} with {capital} capital...")
+    
+    client = WallexRestClient()
+    candles = client.get_candles(market, "60", 0, 0)  # Get recent candles
+    
+    if not candles:
+        print("No candle data available")
+        return 1
+    
+    capital_dec = Decimal(capital)
+    
+    # Get suggestions
+    range_sugg = suggest_range(candles, capital_dec)
+    spacing_sugg = suggest_spacing(candles, capital_dec, Decimal("0.001"))
+    decision = should_run_grid(candles, capital_dec)
+    
+    print(f"\nRange Suggestion:")
+    print(f"  Lower: {range_sugg.lower:.2f}")
+    print(f"  Upper: {range_sugg.upper:.2f}")
+    print(f"  Reasoning: {range_sugg.reasoning}")
+    
+    print(f"\nSpacing Suggestion:")
+    print(f"  Spacing: {spacing_sugg.spacing:.4f}")
+    print(f"  Grid Count: {spacing_sugg.grid_count}")
+    print(f"  Min Profit/Grid: {spacing_sugg.min_profit_per_grid:.4f}")
+    print(f"  Reasoning: {spacing_sugg.reasoning}")
+    
+    print(f"\nRun Decision:")
+    print(f"  Should Run: {decision.should_run}")
+    print(f"  Regime: {decision.regime}")
+    print(f"  Reason: {decision.reason}")
+    print(f"  Confidence: {decision.confidence:.0%}")
+    
+    return 0
+
+
+def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
+    """Run parameter optimization."""
+    from wallexbot.intelligence.optimizer import random_search_optimizer
+    from wallexbot.wallex.client import WallexRestClient
+    from wallexbot.strategy.grid.parameters import GridParameters, GridMode
+    from wallexbot.domain.market import Market, Symbol
+    from decimal import Decimal
+    
+    print(f"Optimizing {market} from {from_ts} to {to_ts} ({iterations} iterations)...")
+    
+    client = WallexRestClient()
+    
+    # Parse timestamps
+    from_ts_int = int(from_ts) if from_ts.isdigit() else _parse_date(from_ts)
+    to_ts_int = int(to_ts) if to_ts.isdigit() else _parse_date(to_ts)
+    
+    candles = client.get_candles(market, "60", from_ts_int, to_ts_int)
+    
+    if not candles:
+        print("No candle data available")
+        return 1
+    
+    # Define parameter ranges
+    param_ranges = {
+        "lower_price": (Decimal("80.00"), Decimal("95.00")),
+        "upper_price": (Decimal("105.00"), Decimal("120.00")),
+        "grid_count": (10, 30),
+        "mode": [GridMode.ARITHMETIC, GridMode.GEOMETRIC],
+        "total_investment": (Decimal("1000000"), Decimal("5000000")),
+    }
+    
+    base_config = {
+        "lower_price": Decimal("90.00"),
+        "upper_price": Decimal("110.00"),
+        "grid_count": 20,
+        "mode": GridMode.ARITHMETIC,
+        "total_investment": Decimal("2000000"),
+    }
+    
+    results = random_search_optimizer(
+        param_ranges=param_ranges,
+        candles=candles,
+        base_config=base_config,
+        n_iterations=iterations,
+        objective="risk_adjusted_return",
+    )
+    
+    print(f"\nTop 5 Results:")
+    for i, r in enumerate(results[:5]):
+        print(f"  {i+1}. Score: {r.score:.4f}")
+        print(f"     Range: {r.params.lower_price} - {r.params.upper_price}")
+        print(f"     Grids: {r.params.grid_count} ({r.params.mode.value})")
+        print(f"     Investment: {r.params.total_investment}")
+        print(f"     Return: {r.metrics.total_return_pct:.2f}%")
+        print(f"     Max DD: {r.metrics.max_drawdown:.2f}%")
+        print(f"     Cycles: {r.metrics.completed_cycles}")
+    
+    return 0
+
+
+def cmd_regime(market: str, period: int) -> int:
+    """Check current market regime."""
+    from wallexbot.intelligence.indicators import detect_regime, calculate_atr, calculate_adx
+    from wallexbot.wallex.client import WallexRestClient
+    
+    print(f"Analyzing regime for {market} (period={period})...")
+    
+    client = WallexRestClient()
+    candles = client.get_candles(market, "60", 0, 0)
+    
+    if not candles:
+        print("No candle data available")
+        return 1
+    
+    # Use recent candles
+    recent = candles[-period:] if len(candles) >= period else candles
+    
+    regime = detect_regime(recent)
+    atr = calculate_atr(recent)
+    adx = calculate_adx(recent)
+    
+    print(f"\nMarket Regime: {regime.upper()}")
+    print(f"ATR: {atr:.4f}")
+    print(f"ADX: {adx:.2f}")
+    
+    if regime == "ranging":
+        print("✓ Good for grid trading")
+    elif regime == "volatile":
+        print("⚠ Volatile - check spacing covers fees")
+    else:
+        print("✗ Trending - grid may accumulate losses")
+    
     return 0
 
 
