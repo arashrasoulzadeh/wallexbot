@@ -1,7 +1,7 @@
 """Analytics API endpoints."""
 
 from fastapi import APIRouter, Query
-from typing: Optional
+from typing import Optional
 from wallexbot.analytics.history import HistoryRepository
 
 router = APIRouter(prefix="/api/history", tags=["history"])

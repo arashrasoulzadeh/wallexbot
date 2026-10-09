@@ -1,7 +1,7 @@
 """Technical indicators for market analysis."""
 
 from decimal import Decimal
-from typing: Optional
+from typing import Optional
 from dataclasses import dataclass
 
 from wallexbot.wallex.models import Candle

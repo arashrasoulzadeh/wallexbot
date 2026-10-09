@@ -1,7 +1,7 @@
 """Telegram notifier for alerts."""
 
 from dataclasses import dataclass
-from typing: Optional
+from typing import Optional
 import asyncio
 import logging
 

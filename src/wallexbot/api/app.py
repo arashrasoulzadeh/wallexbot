@@ -1,7 +1,7 @@
 """FastAPI backend for web UI."""
 
 from contextlib import asynccontextmanager
-from typing: Optional
+from typing import Optional
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware

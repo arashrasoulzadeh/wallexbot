@@ -1,6 +1,6 @@
 """Strategy plugin registry."""
 
-from typing: Optional
+from typing import Optional
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 

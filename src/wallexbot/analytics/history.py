@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing: Optional
+from typing import Optional
 import sqlite3
 import json
 from contextlib import contextmanager

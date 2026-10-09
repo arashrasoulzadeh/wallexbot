@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 from dataclasses import dataclass
-from typing: Optional
+from typing import Optional
 import random
 from concurrent.futures import ProcessPoolExecutor
 

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing: Optional
+from typing import Optional
 import uuid
 
 from wallexbot.strategy.grid.interface import (

@@ -1,7 +1,7 @@
 """Repository interface and implementations."""
 
 from abc import ABC, abstractmethod
-from typing: Optional
+from typing import Optional
 import sqlite3
 import json
 from decimal import Decimal

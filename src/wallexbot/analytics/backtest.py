@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing: Optional
+from typing import Optional
 import asyncio
 
 from wallexbot.strategy.grid.interface import GridStrategy

@@ -5,7 +5,7 @@ import sys
 import json
 import logging
 from pathlib import Path
-from typing: Optional
+from typing import Optional
 
 from wallexbot.config.schema import load_config, validate_config
 from wallexbot.domain.market import Symbol
