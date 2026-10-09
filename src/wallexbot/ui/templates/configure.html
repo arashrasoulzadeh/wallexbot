@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>Configure Grid</h2>
+    <div class="badge badge-paper">PAPER MODE</div>
+
+    <form hx-post="/api/config/validate" hx-target="#validation-result" hx-swap="innerHTML" hx-trigger="change delay:500ms, keyup delay:500ms" id="config-form">
+        <div class="grid">
+            <div class="form-group">
+                <label>Market</label>
+                <select name="market.symbol" id="market-select" required>
+                    <option value="">Loading...</option>
+                </select>
+                <div id="market-info"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Lower Price</label>
+                <input type="number" step="0.01" name="strategy.grid.lower_price" value="90.00" required>
+            </div>
+
+            <div class="form-group">
+                <label>Upper Price</label>
+                <input type="number" step="0.01" name="strategy.grid.upper_price" value="110.00" required>
+            </div>
+
+            <div class="form-group">
+                <label>Grid Count</label>
+                <input type="number" min="2" max="100" name="strategy.grid.grid_count" value="20" required>
+            </div>
+
+            <div class="form-group">
+                <label>Mode</label>
+                <select name="strategy.grid.mode">
+                    <option value="arithmetic">Arithmetic</option>
+                    <option value="geometric">Geometric</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Total Investment (TMN)</label>
+                <input type="number" step="0.01" name="strategy.grid.total_investment" value="2000000.00" required>
+            </div>
+        </div>
+
+        <hr style="margin: 1rem 0;">
+
+        <h3>Risk Limits</h3>
+        <div class="grid">
+            <div class="form-group">
+                <label>Max Open Orders</label>
+                <input type="number" name="risk.max_open_orders" value="20">
+            </div>
+            <div class="form-group">
+                <label>Max Drawdown (%)</label>
+                <input type="number" step="0.01" name="risk.max_drawdown" value="0.05">
+            </div>
+            <div class="form-group">
+                <label>Daily Loss Limit (%)</label>
+                <input type="number" step="0.01" name="risk.daily_loss_limit" value="0.02">
+            </div>
+        </div>
+
+        <button type="submit" style="display: none;">Validate</button>
+    </form>
+
+    <div id="validation-result" class="card" style="margin-top: 1rem;"></div>
+
+    <div class="card" style="margin-top: 1rem;">
+        <h3>Price Chart with Grid Levels</h3>
+        <div id="price-chart" class="chart-container"></div>
+    </div>
+
+    <div class="card" style="margin-top: 1rem;">
+        <h3>Derived Values</h3>
+        <div id="derived-values" class="grid"></div>
+    </div>
+</div>
+
+<script>
+    // Load markets
+    fetch('/api/markets')
+        .then(r => r.json())
+        .then(markets => {
+            const select = document.getElementById('market-select');
+            select.innerHTML = markets.map(m => `<option value="${m.symbol}">${m.symbol} (${m.base}/${m.quote})</option>`).join('');
+            select.value = 'USDTTMN';
+        });
+
+    // Initialize chart
+    const chart = LightweightCharts.createChart(document.getElementById('price-chart'), {
+        width: document.getElementById('price-chart').clientWidth,
+        height: 400,
+        layout: { backgroundColor: '#ffffff', textColor: '#333' },
+        grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
+    });
+
+    const candleSeries = chart.addCandlestickSeries();
+    const buyLineSeries = chart.addLineSeries({ color: 'green', lineWidth: 1, lineStyle: 2 });
+    const sellLineSeries = chart.addLineSeries({ color: 'red', lineWidth: 1, lineStyle: 2 });
+
+    // Update chart when form changes
+    document.getElementById('config-form').addEventListener('change', updateChart);
+    document.getElementById('config-form').addEventListener('keyup', updateChart);
+
+    function updateChart() {
+        const lower = parseFloat(document.querySelector('[name="strategy.grid.lower_price"]').value) || 0;
+        const upper = parseFloat(document.querySelector('[name="strategy.grid.upper_price"]').value) || 0;
+        const count = parseInt(document.querySelector('[name="strategy.grid.grid_count"]').value) || 0;
+        const mode = document.querySelector('[name="strategy.grid.mode"]').value;
+
+        if (!lower || !upper || count < 2) return;
+
+        // Generate levels
+        const levels = generateLevels(lower, upper, count, mode);
+
+        // Update derived values
+        updateDerivedValues(lower, upper, count, mode, levels);
+
+        // Update chart lines
+        const buyLevels = levels.filter(l => l.side === 'buy').map(l => ({ time: Date.now()/1000, value: l.price }));
+        const sellLevels = levels.filter(l => l.side === 'sell').map(l => ({ time: Date.now()/1000, value: l.price }));
+
+        buyLineSeries.setData(buyLevels);
+        sellLineSeries.setData(sellLevels);
+    }
+
+    function generateLevels(lower, upper, count, mode) {
+        const levels = [];
+        if (mode === 'arithmetic') {
+            const step = (upper - lower) / (count - 1);
+            for (let i = 0; i < count; i++) {
+                levels.push({ price: lower + step * i, index: i });
+            }
+        } else {
+            const ratio = Math.pow(upper / lower, 1 / (count - 1));
+            for (let i = 0; i < count; i++) {
+                levels.push({ price: lower * Math.pow(ratio, i), index: i });
+            }
+        }
+        return levels;
+    }
+
+    function updateDerivedValues(lower, upper, count, mode, levels) {
+        const container = document.getElementById('derived-values');
+        const spacing = mode === 'arithmetic' ? (upper - lower) / (count - 1) : 'varies';
+        const perGrid = parseFloat(document.querySelector('[name="strategy.grid.total_investment"]').value) / count;
+
+        container.innerHTML = `
+            <div><strong>Spacing:</strong> ${spacing.toFixed(2)}</div>
+            <div><strong>Levels:</strong> ${count}</div>
+            <div><strong>Per-grid Investment:</strong> ${perGrid.toFixed(2)} TMN</div>
+            <div><strong>Buy Levels:</strong> ${levels.filter(l => l.side === 'buy').length}</div>
+            <div><strong>Sell Levels:</strong> ${levels.filter(l => l.side === 'sell').length}</div>
+        `;
+    }
+
+    // Initial chart load
+    updateChart();
+</script>
+{% endblock %}
