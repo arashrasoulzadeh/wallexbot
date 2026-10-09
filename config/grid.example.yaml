@@ -1,0 +1,73 @@
+# Wallex Grid Bot Configuration Example
+# All fields are documented with comments
+
+exchange:
+  # Exchange name (currently only "wallex" supported)
+  name: "wallex"
+  # REST API base URL (public endpoints only)
+  base_url: "https://api.wallex.ir"
+  # WebSocket URL (public channels only)
+  ws_url: "wss://api.wallex.ir/ws"
+
+market:
+  # Trading pair symbol (must be a spot market on Wallex)
+  # Use `wallexbot markets` to list available spot markets
+  symbol: "USDTTMN"
+
+strategy:
+  grid:
+    # Grid lower bound (inclusive) - price at which lowest buy order placed
+    lower_price: "90.00"
+    # Grid upper bound (inclusive) - price at which highest sell order placed
+    upper_price: "110.00"
+    # Number of grid levels (minimum 2)
+    # More levels = smaller spacing = more trades but less profit per trade
+    grid_count: 20
+    # Grid spacing mode: "arithmetic" (equal price steps) or "geometric" (equal ratio steps)
+    mode: "arithmetic"
+    # Total quote currency to invest (TMN for USDTTMN)
+    total_investment: "2000000.00"
+    # Optional: fixed base quantity per grid level (alternative to total_investment)
+    # per_grid_qty: "10.0000"
+    # Optional: stop loss price (below lower_price)
+    # stop_loss_price: "85.00"
+    # Optional: take profit price (above upper_price)
+    # take_profit_price: "115.00"
+
+risk:
+  # Maximum concurrent open orders (Wallex limit: 20 req/10s)
+  max_open_orders: 20
+  # Maximum quote currency exposure (TMN)
+  max_exposure_quote: "2000000.00"
+  # Maximum base currency exposure (USDT)
+  max_exposure_base: "20000.00"
+  # Maximum drawdown from peak equity (0.05 = 5%)
+  max_drawdown: "0.05"
+  # Maximum daily loss limit (0.02 = 2%)
+  daily_loss_limit: "0.02"
+
+simulation:
+  # Initial quote balance for paper trading (TMN)
+  # Default: 2,000,000 TMN per decision D8
+  initial_balance_quote: "2000000.00"
+  # Initial base balance for paper trading (USDT)
+  initial_balance_base: "0.00"
+  # Maker fee rate (0.001 = 0.1%)
+  fee_maker: "0.001"
+  # Taker fee rate (0.002 = 0.2%)
+  fee_taker: "0.002"
+  # Minimum notional value per order (TMN)
+  min_notional: "10.00"
+  # Minimum quantity per order (USDT)
+  min_quantity: "0.0001"
+  # Fill model: "conservative" (needs trade through price) or "touch" (price touch)
+  # Default: "conservative" per decision D4
+  fill_model: "conservative"
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  # Output as JSON lines (true) or human-readable (false)
+  json: true
+  # Optional log file path (stdout if not set)
+  # file: "logs/wallexbot.jsonl"
