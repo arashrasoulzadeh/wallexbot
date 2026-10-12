@@ -55,18 +55,36 @@ def test_a_checkpoint_survives_reopening_the_database(tmp_path):
     assert SQLiteRepository(path).get_checkpoint(run_id) == STATE
 
 
-def test_a_database_created_before_checkpoints_is_upgraded(tmp_path):
+@pytest.mark.parametrize("table", ["checkpoints", "snapshots"])
+def test_a_database_created_before_a_table_existed_is_upgraded(tmp_path, table):
+    from wallexbot.storage.migrations import MIGRATIONS
+
+    version = next(
+        i for i, m in enumerate(MIGRATIONS, 1) if f"CREATE TABLE IF NOT EXISTS {table}" in m
+    )
     path = str(tmp_path / "old.db")
     repo = SQLiteRepository(path)
     run_id = make_run(repo)
     repo.close()
     with sqlite3.connect(path) as conn:  # make it look like a database from before this feature
-        conn.execute("DROP TABLE checkpoints")
-        conn.execute(
-            "DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)"
-        )
+        conn.execute(f"DROP TABLE {table}")
+        conn.execute("DELETE FROM schema_migrations WHERE version = ?", (version,))
 
     upgraded = SQLiteRepository(path)
     upgraded.save_checkpoint(run_id, STATE)
+    upgraded.save_snapshot(
+        run_id,
+        {
+            "ts": 1,
+            "price": "1",
+            "equity": "1",
+            "realized": "0",
+            "fees": "0",
+            "open_orders": 0,
+            "fills": 0,
+            "cycles": 0,
+        },
+    )
     assert upgraded.get_checkpoint(run_id) == STATE
+    assert len(upgraded.get_snapshots(run_id)) == 1
     assert upgraded.get_run(run_id) is not None  # nothing else was lost

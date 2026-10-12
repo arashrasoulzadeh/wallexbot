@@ -27,3 +27,4 @@ class EngineConfig:
     checkpoint_every_ticks: int = 20  # also saved whenever anything changes (fills, orders...)
     keep_fills: int = 200  # in-memory history caps for runs that never end
     keep_events: int = 500
+    snapshot_every_ms: int = 30_000  # price/equity history is recorded at most this often

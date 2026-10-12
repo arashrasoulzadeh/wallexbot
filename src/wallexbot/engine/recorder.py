@@ -49,10 +49,11 @@ class RunRecorder:
         if order.id not in self._saved_orders:  # fills reference their order
             self.repository.save_order(self.run_id, self._order_dict(order, level_index))
             self._saved_orders.add(order.id)
+        stored_order_id = self._stored_id(order.id)
         self.repository.save_fill(
             self.run_id,
             {
-                "order_id": order.id,
+                "order_id": stored_order_id,
                 "trade_id": fill.trade_id,
                 "price": str(fill.price),
                 "quantity": str(fill.quantity),
@@ -64,13 +65,20 @@ class RunRecorder:
             },
         )
 
+    def snapshot(self, snapshot: dict[str, Any]) -> None:
+        self.repository.save_snapshot(self.run_id, snapshot)
+
+    def _stored_id(self, order_id: str) -> str:
+        """Every run numbers its simulated orders ord_0, ord_1...; the database key must be unique
+        across runs, so stored order ids carry the run id."""
+        return f"{self.run_id}:{order_id}"
+
     def finish(self, status: str) -> None:
         self.repository.update_run_status(self.run_id, status, int(time.time() * 1000))
 
-    @staticmethod
-    def _order_dict(order: Order, level_index: int | None) -> dict[str, Any]:
+    def _order_dict(self, order: Order, level_index: int | None) -> dict[str, Any]:
         return {
-            "id": order.id,
+            "id": self._stored_id(order.id),
             "client_id": order.client_id,
             "symbol": str(order.symbol),
             "side": order.side.value,

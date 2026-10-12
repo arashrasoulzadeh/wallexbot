@@ -91,6 +91,20 @@ MIGRATIONS = [
         updated_at INTEGER NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS snapshots (
+        run_id TEXT NOT NULL REFERENCES runs(id),
+        ts INTEGER NOT NULL,
+        price TEXT,
+        equity TEXT NOT NULL,
+        realized TEXT NOT NULL,
+        fees TEXT NOT NULL,
+        open_orders INTEGER NOT NULL,
+        fills INTEGER NOT NULL,
+        cycles INTEGER NOT NULL,
+        PRIMARY KEY (run_id, ts)
+    )
+    """,
 ]
 
 

@@ -63,6 +63,16 @@ class Repository(ABC):
         """The run's latest checkpoint, or None."""
 
     @abstractmethod
+    def save_snapshot(self, run_id: str, snapshot: dict[str, Any]) -> None:
+        """Record the run's price and equity at a moment (replaces one at the same time)."""
+
+    @abstractmethod
+    def get_snapshots(
+        self, run_id: str, since: int | None = None, until: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Snapshots oldest first, optionally limited to since <= ts <= until (milliseconds)."""
+
+    @abstractmethod
     def save_event(self, run_id: str, event: dict[str, Any]) -> int: ...
 
     @abstractmethod
@@ -79,6 +89,7 @@ class InMemoryRepository(Repository):
         self._grid_states: dict[str, dict[str, Any]] = {}
         self._events: dict[str, list[dict[str, Any]]] = {}
         self._checkpoints: dict[str, str] = {}
+        self._snapshots: dict[str, dict[int, dict[str, Any]]] = {}
         self._run_counter = 0
         self._fill_counter = 0
         self._event_counter = 0
@@ -149,7 +160,11 @@ class InMemoryRepository(Repository):
         fills = [f for f in self._fills.values() if f["run_id"] == run_id]
         if order_id:
             fills = [f for f in fills if f["order_id"] == order_id]
-        return fills
+        result = []
+        for fill in fills:
+            order = self._orders.get((run_id, fill["order_id"]))
+            result.append({**fill, "side": order["side"] if order else None})
+        return result
 
     def save_grid_state(self, run_id: str, state: dict[str, Any]) -> None:
         import time
@@ -169,6 +184,19 @@ class InMemoryRepository(Repository):
 
         raw = self._checkpoints.get(run_id)
         return json.loads(raw) if raw is not None else None
+
+    def save_snapshot(self, run_id: str, snapshot: dict[str, Any]) -> None:
+        self._snapshots.setdefault(run_id, {})[snapshot["ts"]] = dict(snapshot)
+
+    def get_snapshots(
+        self, run_id: str, since: int | None = None, until: int | None = None
+    ) -> list[dict[str, Any]]:
+        rows = sorted(self._snapshots.get(run_id, {}).items())
+        return [
+            dict(snap)
+            for ts, snap in rows
+            if (since is None or ts >= since) and (until is None or ts <= until)
+        ]
 
     def save_event(self, run_id: str, event: dict[str, Any]) -> int:
         self._event_counter += 1
@@ -359,12 +387,16 @@ class SQLiteRepository(Repository):
 
     def get_fills(self, run_id: str, order_id: str | None = None) -> list[dict[str, Any]]:
         cursor = self._db.cursor()
+        query = (
+            "SELECT f.*, o.side AS side FROM fills f "
+            "LEFT JOIN orders o ON o.id = f.order_id AND o.run_id = f.run_id "
+            "WHERE f.run_id = ?"
+        )
+        params: tuple[Any, ...] = (run_id,)
         if order_id:
-            cursor.execute(
-                "SELECT * FROM fills WHERE run_id = ? AND order_id = ?", (run_id, order_id)
-            )
-        else:
-            cursor.execute("SELECT * FROM fills WHERE run_id = ?", (run_id,))
+            query += " AND f.order_id = ?"
+            params = (run_id, order_id)
+        cursor.execute(query + " ORDER BY f.timestamp, f.id", params)
         return [dict(row) for row in cursor.fetchall()]
 
     def save_grid_state(self, run_id: str, state: dict[str, Any]) -> None:
@@ -409,6 +441,45 @@ class SQLiteRepository(Repository):
             return None
         loaded: dict[str, Any] = json.loads(row[0])
         return loaded
+
+    def save_snapshot(self, run_id: str, snapshot: dict[str, Any]) -> None:
+        with self._transaction() as cursor:
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO snapshots
+                (run_id, ts, price, equity, realized, fees, open_orders, fills, cycles)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    snapshot["ts"],
+                    snapshot.get("price"),
+                    snapshot["equity"],
+                    snapshot["realized"],
+                    snapshot["fees"],
+                    snapshot["open_orders"],
+                    snapshot["fills"],
+                    snapshot["cycles"],
+                ),
+            )
+
+    def get_snapshots(
+        self, run_id: str, since: int | None = None, until: int | None = None
+    ) -> list[dict[str, Any]]:
+        query = (
+            "SELECT ts, price, equity, realized, fees, open_orders, fills, cycles "
+            "FROM snapshots WHERE run_id = ?"
+        )
+        params: list[Any] = [run_id]
+        if since is not None:
+            query += " AND ts >= ?"
+            params.append(since)
+        if until is not None:
+            query += " AND ts <= ?"
+            params.append(until)
+        cursor = self._db.cursor()
+        cursor.execute(query + " ORDER BY ts", params)
+        return [dict(row) for row in cursor.fetchall()]
 
     def save_event(self, run_id: str, event: dict[str, Any]) -> int:
         import time

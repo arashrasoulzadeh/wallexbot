@@ -43,11 +43,15 @@ def new_engine(feed, repo, **kw):
     return engine, exchange
 
 
-async def run_until_crash(prices: list[str], crash_after: int):
+async def run_until_crash(
+    prices: list[str], crash_after: int, snapshot_every_ms: int | None = None
+):
     """Run `crash_after` ticks, then 'crash': keep a copy of the database as it is right then."""
     repo = InMemoryRepository()
     wait = asyncio.Event()
     engine, _ = new_engine(ScriptedFeed(prices[:crash_after], then_wait=wait), repo)
+    if snapshot_every_ms is not None:
+        engine.config.snapshot_every_ms = snapshot_every_ms
     task = engine.start()
     for _ in range(500):
         await asyncio.sleep(0)

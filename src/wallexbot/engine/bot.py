@@ -83,6 +83,8 @@ class BotEngine:
         self._catchup: list[PriceTick] = []
         self._checkpoint_key: tuple[object, ...] | None = None
         self._ticks_since_checkpoint = 0
+        self._last_snapshot_ts: int | None = None
+        self._last_snapshot_fills = 0
 
     # --- control --------------------------------------------------------------------
 
@@ -173,6 +175,8 @@ class BotEngine:
         )
         self._equity = None if mine["equity"] is None else Decimal(mine["equity"])
         self._events = list(mine["events"])
+        self._last_snapshot_ts = mine.get("last_snapshot_ts")
+        self._last_snapshot_fills = mine.get("last_snapshot_fills", self.session.fill_count)
         self._synced_fills = self.session.fill_count  # already recorded before the crash
         self._synced_events = self.session.event_count
         self._run_id = run_id
@@ -316,6 +320,7 @@ class BotEngine:
         self._last_price = tick.price
         self._equity = self.session.equity(tick.price)
         self._sync_session()
+        self._maybe_snapshot(tick.timestamp)  # before the checkpoint, which records its cursor
         self._maybe_checkpoint()
 
         risk = self.config.risk
@@ -344,6 +349,39 @@ class BotEngine:
                 level = state.get_level_for_order(order.client_id) if state else None
                 self._recorder.fill(order, fill, level)
 
+    # --- history ---------------------------------------------------------------------
+
+    def _maybe_snapshot(self, timestamp: int, force: bool = False) -> None:
+        """Record price and equity for the History page: at the first price, whenever a fill
+        happened, and otherwise at most every `snapshot_every_ms`."""
+        recorder = self._recorder
+        if recorder is None or not recorder.run_id or self._equity is None:
+            return
+        fills = self.session.fill_count
+        last = self._last_snapshot_ts
+        if (
+            not force
+            and last is not None
+            and timestamp - last < self.config.snapshot_every_ms
+            and fills == self._last_snapshot_fills
+        ):
+            return
+        tracker = self.config.strategy.profit_tracker
+        recorder.snapshot(
+            {
+                "ts": timestamp,
+                "price": None if self._last_price is None else str(self._last_price),
+                "equity": str(self._equity),
+                "realized": str(tracker.total_profit),
+                "fees": str(self.session.fees_quote),
+                "open_orders": len(self.config.exchange.open_orders()),
+                "fills": fills,
+                "cycles": tracker.total_cycles,
+            }
+        )
+        self._last_snapshot_ts = timestamp
+        self._last_snapshot_fills = fills
+
     # --- checkpoints ----------------------------------------------------------------
 
     def _checkpoint_state(self) -> dict[str, Any]:
@@ -362,6 +400,8 @@ class BotEngine:
                 "equity": None if self._equity is None else str(self._equity),
                 "events": self._events[-200:],
                 "paused": self.state is EngineState.PAUSED,
+                "last_snapshot_ts": self._last_snapshot_ts,
+                "last_snapshot_fills": self._last_snapshot_fills,
             },
             "risk": None if risk is None else risk.export_state(),
             "session": self.session.export_state(),
@@ -422,6 +462,8 @@ class BotEngine:
             self.session.stop()
         self._log(message)
         self._sync_session()
+        if self._ticks > 0:
+            self._maybe_snapshot(self._last_tick_ts, force=True)
         self._save_checkpoint()
 
     def _log(self, message: str) -> None:
