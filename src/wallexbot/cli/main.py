@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import logging
 import sys
-from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -18,14 +17,11 @@ from wallexbot.analytics.report import (
     render_markdown,
 )
 from wallexbot.config.schema import load_config
-from wallexbot.domain.balance import Balance
-from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-from wallexbot.domain.market import Market, Symbol
-from wallexbot.engine import BotEngine, EngineConfig, RiskMonitor
-from wallexbot.sim.exchange import SimulatedExchange
+from wallexbot.domain.market import Symbol
+from wallexbot.engine import BotEngine, EngineConfig
+from wallexbot.setup import GridSetup, find_market
 from wallexbot.storage.repository import SQLiteRepository
-from wallexbot.strategy.grid.interface import GridStrategy
-from wallexbot.strategy.grid.parameters import GridMode, GridParameters
+from wallexbot.strategy.grid.parameters import GridMode
 from wallexbot.wallex.client import WallexRestClient
 from wallexbot.wallex.price_feed import PriceFeedReplay
 
@@ -284,40 +280,7 @@ def make_price_feed(kind: str, symbol: Symbol, client: WallexRestClient) -> Any:
     return WebSocketTradeFeed(symbol)
 
 
-@dataclass
-class _GridSetup:
-    """A validated config turned into the objects a run needs."""
-
-    symbol: str
-    market: Market
-    params: GridParameters
-    fees: FeeSchedule
-    min_rule: MinNotionalRule
-    maker: Decimal
-    taker: Decimal
-    min_notional: Decimal
-    risk: RiskMonitor
-    initial_quote: Decimal
-    initial_base: Decimal
-
-    def new_exchange(self) -> SimulatedExchange:
-        return SimulatedExchange(
-            market=self.market,
-            fee_schedule_config=self.fees,
-            min_notional_rule=self.min_rule,
-            initial_balances={
-                self.market.quote: Balance(free=self.initial_quote, locked=Decimal(0)),
-                self.market.base: Balance(free=self.initial_base, locked=Decimal(0)),
-            },
-        )
-
-    def new_strategy(self) -> GridStrategy:
-        return GridStrategy(
-            self.market, self.params, fee_schedule=self.fees, min_notional_rule=self.min_rule
-        )
-
-
-def _load_grid_setup(config_file: str, client: WallexRestClient) -> _GridSetup | None:
+def _load_grid_setup(config_file: str, client: WallexRestClient) -> GridSetup | None:
     """Load the config and the market's real precisions; prints the problem and returns None."""
     try:
         config = load_config(config_file)
@@ -326,45 +289,11 @@ def _load_grid_setup(config_file: str, client: WallexRestClient) -> _GridSetup |
         return None
 
     symbol = str(config.market.symbol)
-    info = next((m for m in client.get_markets() if str(m.symbol) == symbol), None)
+    info = find_market(client, symbol)
     if info is None:
         print(f"Error: market {symbol} not found (is it a spot market?)")
         return None
-    market = Market(
-        symbol=Symbol(symbol),
-        base=info.base_asset,
-        quote=info.quote_asset,
-        price_precision=info.price_precision,
-        amount_precision=info.amount_precision,
-        is_spot=info.is_spot,
-    )
-
-    grid = config.strategy["grid"]
-    sim = config.simulation
-    maker, taker = Decimal(sim.fee_maker), Decimal(sim.fee_taker)
-    min_notional = Decimal(sim.min_notional)
-    return _GridSetup(
-        symbol=symbol,
-        market=market,
-        params=GridParameters(
-            lower_price=Decimal(grid.lower_price),
-            upper_price=Decimal(grid.upper_price),
-            grid_count=grid.grid_count,
-            mode=grid.mode,
-            total_investment=Decimal(grid.total_investment),
-        ),
-        fees=FeeSchedule(maker_rate=maker, taker_rate=taker),
-        min_rule=MinNotionalRule(min_notional=min_notional, min_quantity=Decimal(sim.min_quantity)),
-        maker=maker,
-        taker=taker,
-        min_notional=min_notional,
-        risk=RiskMonitor(
-            max_drawdown=Decimal(config.risk.max_drawdown),
-            daily_loss_limit=Decimal(config.risk.daily_loss_limit),
-        ),
-        initial_quote=Decimal(sim.initial_balance_quote),
-        initial_base=Decimal(sim.initial_balance_base),
-    )
+    return GridSetup.from_config(config, info)
 
 
 def cmd_backtest(
@@ -526,7 +455,6 @@ def cmd_ui(host: str, port: int) -> int:
 
 def cmd_suggest(market: str, capital: str) -> int:
     """Get intelligent grid suggestions."""
-    from decimal import Decimal
 
     from wallexbot.intelligence.smart_grid import (
         should_run_grid,
@@ -573,7 +501,6 @@ def cmd_suggest(market: str, capital: str) -> int:
 
 def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
     """Run parameter optimization."""
-    from decimal import Decimal
 
     from wallexbot.intelligence.optimizer import random_search_optimizer
     from wallexbot.wallex.client import WallexRestClient

@@ -268,3 +268,93 @@ async def test_an_engine_cannot_be_run_twice():
     await engine.run()
     with pytest.raises(RuntimeError, match="already"):
         await engine.run()
+
+
+async def test_pause_freezes_fills_and_resume_continues():
+    holder = {}
+
+    def before_tick(i: int) -> None:
+        engine = holder["engine"]
+        if i == 1:
+            engine.pause()
+        if i == 3:
+            engine.resume()
+
+    engine, exchange, _ = make_engine(
+        ScriptedFeed(["100", "97", "96", "94"], before_tick), cancel_on_shutdown=False
+    )
+    holder["engine"] = engine
+    await engine.run()
+
+    status = engine.status()
+    # Prices 97 and 96 arrived while paused: nothing filled. After resume, 94 trades through the
+    # buys at 97.5 and 95, and both are filled in that single step.
+    assert status.fills == 2
+    assert status.ticks_processed == 4
+    assert [e for e in status.events if e in ("paused", "resumed")] == ["paused", "resumed"]
+
+
+async def test_nothing_fills_while_paused():
+    holder = {}
+
+    def before_tick(i: int) -> None:
+        if i == 1:
+            holder["engine"].pause()
+
+    engine, _, _ = make_engine(
+        ScriptedFeed(["100", "90.5", "91"], before_tick), cancel_on_shutdown=False
+    )
+    holder["engine"] = engine
+    await engine.run()
+
+    status = engine.status()
+    assert status.fills == 0  # 90.5 crosses four buy levels, but the engine was paused
+    assert status.last_price == D("91")  # still tracks the market while paused
+
+
+async def test_pause_only_applies_to_a_running_engine_and_kill_works_while_paused():
+    engine, exchange, _ = make_engine(ScriptedFeed(["100"]))
+    engine.pause()  # idle: ignored
+    assert engine.status().state is EngineState.IDLE
+
+    holder = {}
+
+    def before_tick(i: int) -> None:
+        if i == 1:
+            holder["engine"].pause()
+        if i == 2:
+            assert holder["engine"].status().state is EngineState.PAUSED
+            holder["engine"].kill("while paused")
+
+    engine, exchange, _ = make_engine(ScriptedFeed(["100", "99", "98"], before_tick))
+    holder["engine"] = engine
+    await engine.run()
+    assert engine.status().state is EngineState.HALTED and exchange.open_orders() == []
+
+
+async def test_run_id_is_available_when_recording():
+    repo = InMemoryRepository()
+    engine, _, _ = make_engine(ScriptedFeed(["100"]), repository=repo)
+    assert engine.run_id == ""
+    await engine.run()
+    assert engine.run_id == repo.list_runs()[0]["id"]
+
+
+async def test_snapshot_is_json_ready_and_has_the_live_picture():
+    import json
+
+    engine, _, _ = make_engine(ScriptedFeed(["100", "97"]), cancel_on_shutdown=False)
+    await engine.run()
+
+    snap = engine.snapshot()
+    json.dumps(snap)  # everything is plain JSON types
+    assert snap["status"]["state"] == "stopped" and snap["status"]["last_price"] == "97"
+    assert len(snap["orders"]) == 8
+    assert {"level", "side", "price", "quantity", "filled"} <= set(snap["orders"][0])
+    assert snap["fills"][0]["side"] == "BUY" and D(snap["fills"][0]["price"]) == D("97.5")
+    assert {b["asset"] for b in snap["balances"]} == {"TMN", "USDT"}
+    assert len(snap["grid"]["levels"]) == 9
+    assert D(snap["grid"]["lower"]) == 90 and D(snap["grid"]["upper"]) == 110
+    assert [lv["price"] for lv in snap["grid"]["levels"]] == sorted(
+        (lv["price"] for lv in snap["grid"]["levels"]), key=D
+    )
