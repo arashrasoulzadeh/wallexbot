@@ -532,7 +532,7 @@ def create_app(
     page("/backtest", "backtest.html", "backtest")
     page("/paper", "paper.html", "paper")
     page("/runs", "runs.html", "runs")
-    page("/history", "unavailable.html", "history")
+    page("/history", "history.html", "history")
     page("/settings", "unavailable.html", "settings")
 
     return app

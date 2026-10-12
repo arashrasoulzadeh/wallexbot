@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 data-i18n="hist.title">History</h1>
+<p class="lead" data-i18n="hist.intro"></p>
+
+<div class="card">
+    <div class="toolbar">
+        <div><label for="run" data-i18n="hist.run">Run</label><select id="run"></select></div>
+        <div><label data-i18n="hist.range">Range</label>
+            <div class="pills" id="pills">
+                <button type="button" class="pill" data-hours="1" data-i18n="hist.r1h"></button>
+                <button type="button" class="pill" data-hours="24" data-i18n="hist.r24h"></button>
+                <button type="button" class="pill" data-hours="168" data-i18n="hist.r7d"></button>
+                <button type="button" class="pill on" data-hours="0" data-i18n="hist.rall"></button>
+            </div></div>
+        <div><label for="side" data-i18n="col.side">Side</label>
+            <select id="side"><option value="" data-i18n="hist.sideAll"></option>
+                <option value="BUY" data-i18n="side.BUY"></option><option value="SELL" data-i18n="side.SELL"></option></select></div>
+    </div>
+    <p class="muted" id="tz-note" data-i18n="hist.tz"></p>
+    <div id="message"></div>
+</div>
+
+<div id="empty" class="note" style="display:none" data-i18n="hist.noRuns"></div>
+
+<div id="content" style="display:none">
+    <div class="stats" id="stats"></div>
+    <p class="muted" data-i18n="hist.summaryRange"></p>
+
+    <div class="card"><h2 data-i18n="hist.equity">Equity over time</h2><div id="equity-chart"></div><div class="readout" id="equity-readout"></div></div>
+    <div class="card"><h2 data-i18n="hist.priceTrades">Price and trades</h2><div id="price-chart"></div><div class="readout" id="price-readout"></div></div>
+
+    <div class="card"><h2 data-i18n="hist.daily">Day by day</h2><div class="scroll"><table id="daily"></table></div></div>
+
+    <div class="card">
+        <h2 data-i18n="hist.trades">Trades</h2>
+        <div class="actions">
+            <a id="csv-trades" data-i18n="hist.csvTrades" href="#"></a>
+            <a id="csv-history" data-i18n="hist.csvHistory" href="#"></a>
+        </div>
+        <div class="scroll"><table id="trades"></table></div>
+    </div>
+
+    <div class="card"><h2 data-i18n="hist.events">Events</h2><ul class="events" id="events"></ul></div>
+</div>
+
+<script>
+wb.ready.then(async function () {
+    const $ = function (id) { return document.getElementById(id); };
+    const HOUR = 3600000;
+    let runs = [];
+    let hours = 0;                       // 0 = the whole run
+    let detail = null;
+
+    function say(kind, text) {
+        const box = wb.clear($('message'));
+        if (text) { box.appendChild(wb.el('div', { class: kind, text: text })); }
+    }
+
+    function table(node, head, rows) {
+        wb.clear(node);
+        const tr = wb.el('tr', {});
+        head.forEach(function (h) { tr.appendChild(wb.el('th', { text: wb.t(h[0]), class: h[1] || '' })); });
+        node.appendChild(wb.el('thead', {}, tr));
+        const body = wb.el('tbody', {});
+        rows.forEach(function (cells) {
+            const row = wb.el('tr', {});
+            cells.forEach(function (c, i) {
+                const cls = (head[i][1] || '') + (c && c.cls ? ' ' + c.cls : '');
+                row.appendChild(wb.el('td', { class: cls.trim(), text: c && c.text !== undefined ? c.text : String(c) }));
+            });
+            body.appendChild(row);
+        });
+        node.appendChild(body);
+    }
+
+    function stat(label, value, cls) {
+        return wb.el('div', { class: 'stat' }, wb.el('div', { class: 'label', text: wb.t(label) }),
+            wb.el('div', { class: 'value ' + (cls || ''), text: value }));
+    }
+
+    function duration(ms) {
+        const m = Math.round(ms / 60000);
+        if (m < 60) { return m + ' min'; }
+        const h = Math.floor(m / 60);
+        return h < 48 ? h + ' h ' + (m % 60) + ' min' : Math.floor(h / 24) + ' d ' + (h % 24) + ' h';
+    }
+
+    function query() {
+        const q = [];
+        if (hours > 0 && detail) {
+            const end = detail.summary.ended_at;
+            q.push('since=' + (end - hours * HOUR), 'until=' + end);
+        }
+        return q;
+    }
+
+    function render() {
+        const d = detail, s = d.summary;
+        $('content').style.display = '';
+        const stats = wb.clear($('stats'));
+        [
+            stat('m.totalReturn', wb.pct(s.return_pct, 3), wb.signClass(s.return_pct)),
+            stat('hist.holding', wb.pct(s.price_change_pct, 3), wb.signClass(s.price_change_pct)),
+            stat('paper.realized', wb.num(s.realized, 2), wb.signClass(s.realized)),
+            stat('paper.fees', wb.num(s.fees, 2)),
+            stat('paper.cycles', String(s.cycles)),
+            stat('col.fills', s.fills + ' (' + s.buys + ' / ' + s.sells + ')'),
+            stat('m.maxDd', wb.num(s.max_drawdown_pct, 3) + '%'),
+            stat('hist.volume', wb.num(s.volume, 0)),
+            stat('hist.duration', duration(s.duration_ms)),
+            stat('runs.status', wb.t('state.' + s.status))
+        ].forEach(function (n) { stats.appendChild(n); });
+
+        const series = d.series;
+        const equity = wb.clear($('equity-chart'));
+        const priceBox = wb.clear($('price-chart'));
+        if (!series.length) {
+            equity.appendChild(wb.el('p', { class: 'muted', text: wb.t('hist.noData') }));
+            priceBox.appendChild(wb.el('p', { class: 'muted', text: wb.t('hist.noData') }));
+        } else {
+            const e = wb.chart({ series: [{ points: series.map(function (p) { return { x: p.ts, y: Number(p.equity) }; }) }], digits: 0 });
+            e.readout($('equity-readout')); equity.appendChild(e.svg);
+
+            const priced = series.filter(function (p) { return p.price !== null; });
+            const markers = d.fills.map(function (f) {
+                return { x: Number(f.time || f.timestamp), y: Number(f.price), kind: f.side === 'BUY' ? 'buy' : 'sell',
+                         title: wb.t('side.' + f.side) + ' ' + wb.num(f.quantity, 4) + ' @ ' + wb.num(f.price, 4) + ' - ' + wb.time(f.timestamp) };
+            }).filter(function (m) { return m.x >= series[0].ts && m.x <= series[series.length - 1].ts; });
+            const p = wb.chart({ series: [{ points: priced.map(function (q) { return { x: q.ts, y: Number(q.price) }; }) }], markers: markers, digits: 0 });
+            p.readout($('price-readout')); priceBox.appendChild(p.svg);
+        }
+
+        table($('daily'), [['col.date'], ['col.equityChange', 'num'], ['col.realized', 'num'], ['paper.fees', 'num'],
+            ['col.cycles', 'num'], ['col.fills', 'num'], ['col.buys', 'num'], ['col.sells', 'num'], ['col.volume', 'num']],
+            d.daily.map(function (r) {
+                return [r.date, { text: wb.num(r.equity_change, 2), cls: wb.signClass(r.equity_change) },
+                    { text: wb.num(r.realized_change, 2), cls: wb.signClass(r.realized_change) }, wb.num(r.fees, 2),
+                    r.cycles, r.fills, r.buys, r.sells, wb.num(r.volume, 0)];
+            }));
+
+        table($('trades'), [['col.time'], ['col.side'], ['col.price', 'num'], ['col.qty', 'num'], ['col.fee', 'num']],
+            d.fills.slice(0, 200).map(function (f) {
+                return [wb.time(f.timestamp), { text: wb.t('side.' + f.side), cls: f.side === 'BUY' ? 'buy' : 'sell' },
+                    wb.num(f.price, 4), wb.num(f.quantity, 4), wb.num(f.fee, 6) + ' ' + f.fee_asset];
+            }));
+
+        const events = wb.clear($('events'));
+        d.events.forEach(function (ev) {
+            events.appendChild(wb.el('li', { text: (ev.timestamp ? wb.time(ev.timestamp) + '  ' : '') + (ev.message || ev.type) }));
+        });
+
+        const range = query();
+        const qs = range.length ? '?' + range.join('&') : '';
+        $('csv-trades').setAttribute('href', '/api/history/runs/' + s.id + '/fills.csv' + qs);
+        $('csv-history').setAttribute('href', '/api/history/runs/' + s.id + '/snapshots.csv' + qs);
+    }
+
+    async function load() {
+        const id = $('run').value;
+        if (!id) { return; }
+        say('', '');
+        try {
+            // the first request learns where the run ends, so "last 24 hours" means its last 24 hours
+            if (!detail || detail.summary.id !== id) { detail = await wb.api('/api/history/runs/' + id + '?max_points=1'); }
+            const q = query();
+            const side = $('side').value;
+            if (side) { q.push('side=' + side); }
+            const full = await wb.api('/api/history/runs/' + id + (q.length ? '?' + q.join('&') : ''));
+            detail = Object.assign({}, full, { summary: Object.assign({}, full.summary, { ended_at: detail.summary.ended_at }) });
+            render();
+        } catch (e) { say('error', e.message); }
+    }
+
+    function fillRuns(keep) {
+        const select = wb.clear($('run'));
+        runs.forEach(function (r) {
+            select.appendChild(wb.el('option', { value: r.id, text: wb.time(r.started_at) + '  ' + r.market + '  ' + r.status + '  ' + wb.pct(r.return_pct, 2) }));
+        });
+        if (keep) { select.value = keep; }
+    }
+
+    $('run').addEventListener('change', function () { detail = null; load(); });
+    $('side').addEventListener('change', load);
+    document.querySelectorAll('#pills .pill').forEach(function (b) {
+        b.addEventListener('click', function () {
+            hours = Number(b.getAttribute('data-hours'));
+            document.querySelectorAll('#pills .pill').forEach(function (o) { o.classList.toggle('on', o === b); });
+            load();
+        });
+    });
+    document.addEventListener('wb:lang', function () { if (detail) { render(); } });
+
+    try { runs = await wb.api('/api/history/runs'); } catch (e) { say('error', e.message); return; }
+    if (!runs.length) { $('empty').style.display = ''; return; }
+    const wanted = new URLSearchParams(location.search).get('run');
+    fillRuns(runs.some(function (r) { return r.id === wanted; }) ? wanted : runs[0].id);
+    load();
+});
+</script>
+{% endblock %}

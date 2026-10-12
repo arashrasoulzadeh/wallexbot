@@ -104,7 +104,85 @@
       return (n >= 0 ? '+' : '') + n.toFixed(digits === undefined ? 2 : digits) + '%';
     },
     signClass(value) { const n = Number(value); return n > 0 ? 'pos' : (n < 0 ? 'neg' : ''); },
-    time(ms) { return ms ? new Date(Number(ms)).toLocaleString() : '--'; },
+    /* Times are shown in Tehran time (decision D15); everything is stored in UTC. */
+    time(ms) {
+      if (!ms) { return '--'; }
+      return new Date(Number(ms)).toLocaleString('en-GB', {
+        timeZone: 'Asia/Tehran', year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+      });
+    },
+    shortTime(ms) {
+      return new Date(Number(ms)).toLocaleString('en-GB', {
+        timeZone: 'Asia/Tehran', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+      });
+    },
+
+    /* A line chart as SVG. series: [{points: [{x, y}], cls}]; markers: [{x, y, kind: 'buy'|'sell', title}].
+       x is a timestamp (ms). Returns {svg, readout} where readout(text) shows the value under the cursor. */
+    chart(options) {
+      const ns = 'http://www.w3.org/2000/svg';
+      const W = 640, H = 230, L = 74, R = 12, T = 12, B = 28;
+      const all = [];
+      options.series.forEach(function (s) { s.points.forEach(function (p) { all.push(p); }); });
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('class', 'chart'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+      svg.setAttribute('role', 'img');
+      function node(name, attrs, text) {
+        const n = document.createElementNS(ns, name);
+        Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+        if (text !== undefined) { n.textContent = text; }
+        return n;
+      }
+      if (!all.length) { return { svg: svg, readout: function () {} }; }
+      let x0 = Math.min.apply(null, all.map(function (p) { return p.x; }));
+      let x1 = Math.max.apply(null, all.map(function (p) { return p.x; }));
+      let lo = Math.min.apply(null, all.map(function (p) { return p.y; }));
+      let hi = Math.max.apply(null, all.map(function (p) { return p.y; }));
+      if (options.markers) { options.markers.forEach(function (m) { lo = Math.min(lo, m.y); hi = Math.max(hi, m.y); }); }
+      if (hi === lo) { hi += 1; lo -= 1; }
+      const pad = (hi - lo) * 0.05; hi += pad; lo -= pad;
+      if (x1 === x0) { x1 += 1; }
+      const X = function (x) { return L + (x - x0) / (x1 - x0) * (W - L - R); };
+      const Y = function (y) { return T + (1 - (y - lo) / (hi - lo)) * (H - T - B); };
+      for (let i = 0; i <= 3; i++) {                              // horizontal grid + y labels
+        const v = lo + (hi - lo) * i / 3, y = Y(v);
+        svg.appendChild(node('line', { x1: L, x2: W - R, y1: y, y2: y, class: 'chart-grid' }));
+        svg.appendChild(node('text', { x: L - 6, y: y + 4, 'text-anchor': 'end', class: 'chart-label' },
+          wb.num(v, options.digits === undefined ? 2 : options.digits)));
+      }
+      svg.appendChild(node('text', { x: L, y: H - 8, class: 'chart-label' }, wb.shortTime(x0)));
+      svg.appendChild(node('text', { x: W - R, y: H - 8, 'text-anchor': 'end', class: 'chart-label' }, wb.shortTime(x1)));
+      options.series.forEach(function (s) {
+        const pts = s.points.map(function (p) { return X(p.x).toFixed(1) + ',' + Y(p.y).toFixed(1); }).join(' ');
+        svg.appendChild(node('polyline', { points: pts, class: 'chart-line ' + (s.cls || '') }));
+      });
+      (options.markers || []).forEach(function (m) {
+        const cx = X(m.x), cy = Y(m.y);
+        const shape = m.kind === 'buy'
+          ? node('polygon', { points: (cx - 5) + ',' + (cy + 5) + ' ' + (cx + 5) + ',' + (cy + 5) + ' ' + cx + ',' + (cy - 6), class: 'marker-buy' })
+          : node('polygon', { points: (cx - 5) + ',' + (cy - 5) + ' ' + (cx + 5) + ',' + (cy - 5) + ' ' + cx + ',' + (cy + 6), class: 'marker-sell' });
+        shape.appendChild(node('title', {}, m.title || ''));
+        svg.appendChild(shape);
+      });
+      const first = options.series[0].points;
+      const cursor = node('line', { y1: T, y2: H - B, class: 'chart-cursor', visibility: 'hidden' });
+      svg.appendChild(cursor);
+      let readoutNode = null;
+      function show(clientX) {
+        const box = svg.getBoundingClientRect();
+        const x = (clientX - box.left) / box.width * W;
+        let best = first[0];
+        first.forEach(function (p) { if (Math.abs(X(p.x) - x) < Math.abs(X(best.x) - x)) { best = p; } });
+        cursor.setAttribute('x1', X(best.x)); cursor.setAttribute('x2', X(best.x)); cursor.setAttribute('visibility', 'visible');
+        if (readoutNode) { readoutNode.textContent = wb.time(best.x) + '   ' + wb.num(best.y, options.digits === undefined ? 2 : options.digits); }
+      }
+      svg.addEventListener('mousemove', function (e) { show(e.clientX); });
+      svg.addEventListener('mouseleave', function () {
+        cursor.setAttribute('visibility', 'hidden'); if (readoutNode) { readoutNode.textContent = ''; }
+      });
+      return { svg: svg, readout: function (n) { readoutNode = n; } };
+    },
 
     badge(state) {
       return wb.el('span', { class: 'badge ' + state, text: wb.t('state.' + state) });

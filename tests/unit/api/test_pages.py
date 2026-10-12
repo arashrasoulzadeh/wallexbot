@@ -26,7 +26,7 @@ PAGES = {
     "/backtest": "bt.title",
     "/paper": "paper.title",
     "/runs": "runs.title",
-    "/history": "na.title",
+    "/history": "hist.title",
     "/settings": "na.title",
 }
 
@@ -64,9 +64,8 @@ def test_the_root_is_the_dashboard(client):
 def test_navigation_marks_the_current_page(client):
     html = client.get("/paper").text
     assert re.search(r'class="active"[^>]*data-i18n="nav.paper"', html)
-    assert (
-        'href="/runs"' in html and 'href="/history"' not in html
-    )  # unfinished pages are not linked
+    assert 'href="/runs"' in html and 'href="/history"' in html
+    assert 'href="/settings"' not in html  # unfinished pages are not linked
 
 
 def test_static_assets_are_served(client):
@@ -106,7 +105,7 @@ def test_every_translation_key_used_by_the_pages_exists(i18n):
         for s in ("idle", "running", "paused", "stopped", "halted", "failed", "done", "unknown")
     }
     used |= {f"side.{s}" for s in ("BUY", "SELL")}
-    used |= {f"nav.{p}" for p in ("dashboard", "configure", "backtest", "paper", "runs")}
+    used |= {f"nav.{p}" for p in ("dashboard", "configure", "backtest", "paper", "history", "runs")}
     missing = sorted(k for k in used if k not in i18n["en"])
     assert not missing, f"keys used but not translated: {missing}"
 

@@ -37,6 +37,8 @@ wb.ready.then(function () {
             const status = r.recoverable ? wb.el('span', { class: 'badge paused', text: wb.t('runs.interrupted') }) : wb.badge(r.status);
             const buttons = wb.el('td', {}, wb.el('button', { class: 'secondary', type: 'button', text: wb.t('common.open'),
                 onclick: function () { selected = r.id; detail(); } }));
+            buttons.appendChild(document.createTextNode(' '));
+            buttons.appendChild(wb.el('a', { href: '/history?run=' + encodeURIComponent(r.id), text: wb.t('nav.history') }));
             if (r.recoverable) {
                 buttons.appendChild(document.createTextNode(' '));
                 buttons.appendChild(wb.el('button', { type: 'button', text: wb.t('recover.button'), onclick: async function () {
