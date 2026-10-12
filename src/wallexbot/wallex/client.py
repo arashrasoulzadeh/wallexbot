@@ -32,6 +32,17 @@ def _decimal(value: Any) -> Decimal:
     return parse_wire_string(str(value))
 
 
+def _optional_decimal(value: Any) -> Decimal | None:
+    """A decimal from a JSON value, or None for a missing / zero / non-numeric one."""
+    if value in (None, "", 0, "0", "0.0"):
+        return None
+    try:
+        parsed = _decimal(value)
+    except Exception:  # an unparsable number is "no data", not a crash
+        return None
+    return parsed if parsed > 0 else None
+
+
 def _iso_to_ms(value: str) -> int:
     """'2026-10-12T09:28:31Z' -> epoch milliseconds."""
     return int(
@@ -88,6 +99,15 @@ class WallexRestClient:
                 price_precision=int(item["price_precision"]),
                 amount_precision=int(item["amount_precision"]),
                 is_spot=bool(item["is_spot"]),
+                price=_optional_decimal(item.get("price")),
+                change_24h_pct=None
+                if item.get("change_24h") is None
+                else _decimal(item["change_24h"]),
+                high_24h=_optional_decimal(item.get("highest_24h_price")),
+                low_24h=_optional_decimal(item.get("lowest_24h_price")),
+                quote_volume_24h=_optional_decimal(item.get("quote_volume_24h")),
+                min_notional_hint=_optional_decimal(item.get("otc_min_notional")),
+                is_zero_fee=bool(item.get("is_zero_fee")),
             )
             for item in result["markets"]
             if item.get("is_spot")

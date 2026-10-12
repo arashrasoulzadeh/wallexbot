@@ -148,3 +148,26 @@ def test_no_auth_headers_are_ever_sent():
     client.get_markets()
     headers = {k.lower() for k in transport.calls[0][2].get("headers", {})}
     assert not headers & {"x-api-key", "authorization"}
+
+
+def test_markets_carry_price_volume_and_the_minimum_order_hint():
+    client, _ = client_for(load("markets_full.json"))
+    markets = {m.symbol: m for m in client.get_markets()}
+
+    usdt = markets[Symbol("USDTTMN")]
+    assert usdt.price is not None and usdt.price > 0
+    assert (
+        usdt.high_24h >= usdt.low_24h > 0
+    )  # (the live price can sit a hair outside a lagging 24 h range)
+    assert usdt.quote_volume_24h > 0 and usdt.min_notional_hint == D("90000")
+    assert markets[Symbol("BTCUSDT")].min_notional_hint == D("2")
+
+
+def test_every_spot_market_is_returned_including_ones_without_a_price():
+    client, _ = client_for(load("markets_full.json"))
+    markets = client.get_markets()
+    assert len(markets) == 373
+    assert {m.quote_asset for m in markets} == {"TMN", "USDT"}
+    assert any(
+        m.price is None for m in markets
+    )  # inactive markets have no price: kept, not crashed on

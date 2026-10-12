@@ -16,6 +16,14 @@ class Market:
     price_precision: int
     amount_precision: int
     is_spot: bool
+    # market data shown in the coin list (None when Wallex has none, e.g. an inactive market)
+    price: Decimal | None = None
+    change_24h_pct: Decimal | None = None
+    high_24h: Decimal | None = None
+    low_24h: Decimal | None = None
+    quote_volume_24h: Decimal | None = None
+    min_notional_hint: Decimal | None = None  # Wallex's OTC minimum, the closest public hint
+    is_zero_fee: bool = False
 
 
 @dataclass(frozen=True, slots=True)
