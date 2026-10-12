@@ -175,7 +175,7 @@ class SQLiteRepository(Repository):
         run_migrations(self._conn)
 
     @contextmanager
-    def _transaction(self):
+    def _transaction(self) -> Any:
         """Transaction context manager."""
         cursor = self._conn.cursor()
         try:

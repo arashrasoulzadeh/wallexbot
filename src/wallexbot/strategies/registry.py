@@ -1,6 +1,7 @@
 """Strategy plugin registry."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -36,10 +37,10 @@ class StrategyRegistry:
     def __init__(self) -> None:
         self._strategies: dict[str, StrategyPlugin] = {}
 
-    def register(self, name: str):
+    def register(self, name: str) -> Any:
         """Decorator to register a strategy."""
 
-        def decorator(cls):
+        def decorator(cls) -> Any:
             plugin = cls()
             self._strategies[name] = plugin
             return cls

@@ -331,7 +331,7 @@ class SimulatedExchange:
             self._balances[base_asset] = self._balances[base_asset].lock(total)
 
     # Event stream for Phase 5.9
-    def event_stream(self):
+    def event_stream(self) -> None:
         """Generate event stream (OrderUpdated, FillOccurred, BalanceUpdated)."""
         # This would be implemented as an async generator
         pass

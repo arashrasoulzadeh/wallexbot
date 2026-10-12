@@ -211,7 +211,7 @@ class HistoryRepository:
         self._conn.commit()
 
     @contextmanager
-    def _transaction(self):
+    def _transaction(self) -> Any:
         cursor = self._conn.cursor()
         try:
             yield cursor
