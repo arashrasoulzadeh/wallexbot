@@ -261,7 +261,7 @@ def validate_config(data: dict[str, Any], env_overrides: bool = False) -> Config
     return Config.model_validate(data)
 
 
-def _apply_env_overrides(data: dict[str, Any]) -> dict:
+def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
     """Apply environment variable overrides to config."""
     import os
 

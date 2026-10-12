@@ -144,7 +144,7 @@ def walk_forward_validation(
     test_window: int = 100,
     step: int = 50,
     objective: str = "risk_adjusted_return",
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
     Walk-forward validation.
 

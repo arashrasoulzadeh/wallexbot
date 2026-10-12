@@ -64,7 +64,7 @@ class WallexWebSocketClient:
             frame = self.build_unsubscribe(channel)
             await self._connection.send(json.dumps(frame))
 
-    def parse_frame(self, frame: dict[str, Any]) -> Depth | Trade | dict | None:
+    def parse_frame(self, frame: dict[str, Any]) -> Depth | Trade | dict[str, Any] | None:
         """Parse incoming WebSocket frame."""
         event = frame.get("event")
         channel = frame.get("channel", "")
@@ -130,7 +130,7 @@ class WallexWebSocketClient:
             prices[Symbol(symbol)] = parse_wire_string(price_str)
         return prices
 
-    async def handle_message(self, frame: dict[str, Any]) -> dict | None:
+    async def handle_message(self, frame: dict[str, Any]) -> dict[str, Any] | None:
         """Handle incoming message, respond to pings."""
         if frame.get("event") == "ping":
             if self._connection:
@@ -139,7 +139,7 @@ class WallexWebSocketClient:
 
         return self.parse_frame(frame)
 
-    async def messages(self) -> AsyncGenerator[dict, None]:
+    async def messages(self) -> AsyncGenerator[dict[str, Any], None]:
         """Async generator yielding parsed messages."""
         if not self._connection:
             await self.connect()
@@ -163,7 +163,7 @@ class WallexWebSocketClient:
     async def run_with_reconnect(
         self,
         channels: list[str],
-        on_message: Callable[[dict], None],
+        on_message: Callable[[dict[str, Any]], None],
     ) -> None:
         """Run with auto-reconnect."""
         while self._running:

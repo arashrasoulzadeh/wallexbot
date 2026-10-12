@@ -17,6 +17,13 @@ class HistoryRepository:
     def __post_init__(self) -> None:
         self._init_db()
 
+    @property
+    def _db(self) -> sqlite3.Connection:
+        """The open connection; raises a clear error instead of an AttributeError on None."""
+        if self._conn is None:
+            raise RuntimeError("database connection is closed")
+        return self._conn
+
     def _init_db(self) -> None:
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -24,7 +31,7 @@ class HistoryRepository:
 
     def _create_tables(self) -> None:
         """Create all history tables."""
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
 
         # Price ticks
         cursor.execute("""
@@ -208,16 +215,16 @@ class HistoryRepository:
             )
         """)
 
-        self._conn.commit()
+        self._db.commit()
 
     @contextmanager
     def _transaction(self) -> Any:
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         try:
             yield cursor
-            self._conn.commit()
+            self._db.commit()
         except Exception:
-            self._conn.rollback()
+            self._db.rollback()
             raise
 
     # Price ticks
@@ -231,8 +238,8 @@ class HistoryRepository:
                 (market, ts, str(price), source),
             )
 
-    def get_price_ticks(self, market: str, from_ts: int, to_ts: int) -> list[dict]:
-        cursor = self._conn.cursor()
+    def get_price_ticks(self, market: str, from_ts: int, to_ts: int) -> list[dict[str, Any]]:
+        cursor = self._db.cursor()
         cursor.execute(
             """
             SELECT * FROM price_ticks
@@ -276,8 +283,10 @@ class HistoryRepository:
                 ),
             )
 
-    def get_candles(self, market: str, resolution: str, from_ts: int, to_ts: int) -> list[dict]:
-        cursor = self._conn.cursor()
+    def get_candles(
+        self, market: str, resolution: str, from_ts: int, to_ts: int
+    ) -> list[dict[str, Any]]:
+        cursor = self._db.cursor()
         cursor.execute(
             """
             SELECT * FROM candles
@@ -450,9 +459,9 @@ class HistoryRepository:
             )
 
     # Analytics queries
-    def get_pnl_timeseries(self, run_id: str, resolution: str = "1h") -> list[dict]:
+    def get_pnl_timeseries(self, run_id: str, resolution: str = "1h") -> list[dict[str, Any]]:
         """Get PnL time series at given resolution."""
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute(
             """
             SELECT ts, realized, unrealized, fees, equity, inventory, price
@@ -466,7 +475,7 @@ class HistoryRepository:
 
     def get_profit_breakdown(self, run_id: str) -> dict[str, Any]:
         """Get profit breakdown by day/week/month/level/cycle."""
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
 
         # By cycle
         cursor.execute(
@@ -494,9 +503,9 @@ class HistoryRepository:
             else "0",
         }
 
-    def get_drawdown_series(self, run_id: str) -> list[dict]:
+    def get_drawdown_series(self, run_id: str) -> list[dict[str, Any]]:
         """Get drawdown series."""
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute(
             """
             SELECT ts, equity FROM pnl_snapshots WHERE run_id = ? ORDER BY ts
@@ -507,7 +516,7 @@ class HistoryRepository:
 
     def get_trade_stats(self, run_id: str) -> dict[str, Any]:
         """Get trade statistics."""
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute(
             """
             SELECT COUNT(*) as count, AVG(CAST(qty AS REAL)) as avg_size
@@ -521,7 +530,7 @@ class HistoryRepository:
     def reconstruct_state_at(self, run_id: str, ts: int) -> dict[str, Any]:
         """Reconstruct grid state at timestamp."""
         # Get orders at that time
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute(
             """
             SELECT * FROM orders

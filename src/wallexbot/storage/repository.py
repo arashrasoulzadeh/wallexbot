@@ -19,7 +19,7 @@ class Repository(ABC):
     def get_run(self, run_id: str) -> dict[str, Any] | None: ...
 
     @abstractmethod
-    def list_runs(self) -> list[dict]: ...
+    def list_runs(self) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None: ...
@@ -37,13 +37,13 @@ class Repository(ABC):
     def update_order(self, order_id: str, updates: dict[str, Any]) -> None: ...
 
     @abstractmethod
-    def get_open_orders(self, run_id: str) -> list[dict]: ...
+    def get_open_orders(self, run_id: str) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     def save_fill(self, run_id: str, fill: dict[str, Any]) -> int: ...
 
     @abstractmethod
-    def get_fills(self, run_id: str, order_id: str = None) -> list[dict]: ...
+    def get_fills(self, run_id: str, order_id: str = None) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     def save_grid_state(self, run_id: str, state: dict[str, Any]) -> None: ...
@@ -55,7 +55,7 @@ class Repository(ABC):
     def save_event(self, run_id: str, event: dict[str, Any]) -> int: ...
 
     @abstractmethod
-    def get_events(self, run_id: str) -> list[dict]: ...
+    def get_events(self, run_id: str) -> list[dict[str, Any]]: ...
 
 
 class InMemoryRepository(Repository):
@@ -89,7 +89,7 @@ class InMemoryRepository(Repository):
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         return self._runs.get(run_id)
 
-    def list_runs(self) -> list[dict]:
+    def list_runs(self) -> list[dict[str, Any]]:
         return list(self._runs.values())
 
     def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None:
@@ -119,7 +119,7 @@ class InMemoryRepository(Repository):
                 self._orders[key].update(updates)
                 break
 
-    def get_open_orders(self, run_id: str) -> list[dict]:
+    def get_open_orders(self, run_id: str) -> list[dict[str, Any]]:
         return [
             o
             for o in self._orders.values()
@@ -133,7 +133,7 @@ class InMemoryRepository(Repository):
         self._fills[key] = {**fill, "id": fill_id, "run_id": run_id}
         return fill_id
 
-    def get_fills(self, run_id: str, order_id: str = None) -> list[dict]:
+    def get_fills(self, run_id: str, order_id: str = None) -> list[dict[str, Any]]:
         fills = [f for f in self._fills.values() if f["run_id"] == run_id]
         if order_id:
             fills = [f for f in fills if f["order_id"] == order_id]
@@ -157,7 +157,7 @@ class InMemoryRepository(Repository):
         )
         return event_id
 
-    def get_events(self, run_id: str) -> list[dict]:
+    def get_events(self, run_id: str) -> list[dict[str, Any]]:
         return self._events.get(run_id, [])
 
 
@@ -169,6 +169,13 @@ class SQLiteRepository(Repository):
         self._conn: sqlite3.Connection | None = None
         self._init_db()
 
+    @property
+    def _db(self) -> sqlite3.Connection:
+        """The open connection; raises a clear error instead of an AttributeError on None."""
+        if self._conn is None:
+            raise RuntimeError("database connection is closed")
+        return self._conn
+
     def _init_db(self) -> None:
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -177,12 +184,12 @@ class SQLiteRepository(Repository):
     @contextmanager
     def _transaction(self) -> Any:
         """Transaction context manager."""
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         try:
             yield cursor
-            self._conn.commit()
+            self._db.commit()
         except Exception:
-            self._conn.rollback()
+            self._db.rollback()
             raise
 
     def create_run(self, name: str, config: dict[str, Any]) -> str:
@@ -212,15 +219,15 @@ class SQLiteRepository(Repository):
         return run_id
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
         row = cursor.fetchone()
         if row:
             return dict(row)
         return None
 
-    def list_runs(self) -> list[dict]:
-        cursor = self._conn.cursor()
+    def list_runs(self) -> list[dict[str, Any]]:
+        cursor = self._db.cursor()
         cursor.execute("SELECT * FROM runs ORDER BY started_at DESC")
         return [dict(row) for row in cursor.fetchall()]
 
@@ -267,13 +274,13 @@ class SQLiteRepository(Repository):
         return order_id
 
     def get_order(self, run_id: str, order_id: str) -> dict[str, Any] | None:
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute("SELECT * FROM orders WHERE run_id = ? AND id = ?", (run_id, order_id))
         row = cursor.fetchone()
         return dict(row) if row else None
 
     def get_order_by_client_id(self, run_id: str, client_id: str) -> dict[str, Any] | None:
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute(
             "SELECT * FROM orders WHERE run_id = ? AND client_id = ?", (run_id, client_id)
         )
@@ -287,8 +294,8 @@ class SQLiteRepository(Repository):
         with self._transaction() as cursor:
             cursor.execute(f"UPDATE orders SET {set_clause} WHERE id = ?", values)
 
-    def get_open_orders(self, run_id: str) -> list[dict]:
-        cursor = self._conn.cursor()
+    def get_open_orders(self, run_id: str) -> list[dict[str, Any]]:
+        cursor = self._db.cursor()
         cursor.execute(
             """
             SELECT * FROM orders
@@ -327,8 +334,8 @@ class SQLiteRepository(Repository):
             )
             return cursor.lastrowid
 
-    def get_fills(self, run_id: str, order_id: str = None) -> list[dict]:
-        cursor = self._conn.cursor()
+    def get_fills(self, run_id: str, order_id: str = None) -> list[dict[str, Any]]:
+        cursor = self._db.cursor()
         if order_id:
             cursor.execute(
                 "SELECT * FROM fills WHERE run_id = ? AND order_id = ?", (run_id, order_id)
@@ -353,7 +360,7 @@ class SQLiteRepository(Repository):
             )
 
     def get_grid_state(self, run_id: str) -> dict[str, Any] | None:
-        cursor = self._conn.cursor()
+        cursor = self._db.cursor()
         cursor.execute("SELECT * FROM grid_state WHERE run_id = ?", (run_id,))
         row = cursor.fetchone()
         if row:
@@ -381,8 +388,8 @@ class SQLiteRepository(Repository):
             )
             return cursor.lastrowid
 
-    def get_events(self, run_id: str) -> list[dict]:
-        cursor = self._conn.cursor()
+    def get_events(self, run_id: str) -> list[dict[str, Any]]:
+        cursor = self._db.cursor()
         cursor.execute("SELECT * FROM events WHERE run_id = ? ORDER BY timestamp", (run_id,))
         return [dict(row) for row in cursor.fetchall()]
 
