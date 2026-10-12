@@ -27,7 +27,7 @@ class Order:
     symbol: Symbol
     side: Side
     type: OrderType
-    price: Decimal
+    price: Decimal | None  # None for MARKET orders
     quantity: Decimal
     status: OrderStatus
     filled_quantity: Decimal

@@ -17,8 +17,8 @@ class BotEngine:
     _running: bool = field(default=False, init=False)
     _halted: bool = field(default=False, init=False)
     _executor: ActionExecutor = field(init=False)
-    _price_task: asyncio.Task | None = field(default=None, init=False)
-    _poll_task: asyncio.Task | None = field(default=None, init=False)
+    _price_task: asyncio.Task[None] | None = field(default=None, init=False)
+    _poll_task: asyncio.Task[None] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self._executor = ActionExecutor(

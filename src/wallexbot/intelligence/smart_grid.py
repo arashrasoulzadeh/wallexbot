@@ -214,7 +214,7 @@ def suggest_capital_allocation(
 
     return CapitalAllocation(
         allocations=allocations,
-        total=sum(allocations),
+        total=sum(allocations, Decimal(0)),
         reasoning=f"Capital allocated {mode} across {grid_count} levels",
     )
 

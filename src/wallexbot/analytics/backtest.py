@@ -68,8 +68,8 @@ class Backtester:
         self.exchange = exchange
         self.price_feed = price_feed
         self._clock = _BacktestClock()
-        self._initial_equity: Decimal | None = None
-        self._peak_equity: Decimal | None = None
+        self._initial_equity: Decimal = Decimal(0)
+        self._peak_equity: Decimal = Decimal(0)
         self._in_range_time = 0
         self._total_time = 0
         self._last_price: Decimal | None = None
@@ -83,7 +83,7 @@ class Backtester:
 
         # Get first price for strategy initialization
         first_tick = None
-        ticks = []
+        ticks: list[PriceTick] = []
 
         # Collect all ticks first (for replay feed)
         if isinstance(self.price_feed, PriceFeedReplay):
@@ -133,7 +133,7 @@ class Backtester:
             end_time=ticks[-1].timestamp if ticks else 0,
         )
 
-    def _execute_action(self, action) -> None:
+    def _execute_action(self, action: Any) -> None:
         """Execute action on exchange."""
         from wallexbot.domain.order import OrderRequest
         from wallexbot.strategy.grid.interface import CancelAction, PlaceAction
@@ -159,6 +159,9 @@ class Backtester:
         for order in open_orders:
             if not order.is_active:
                 continue
+
+            if order.price is None:
+                continue  # market orders are not simulated yet
 
             # Check if order should fill
             should_fill = False
@@ -233,7 +236,9 @@ class Backtester:
 
         # Time in range
         time_in_range = (
-            (self._in_range_time / self._total_time * 100) if self._total_time > 0 else Decimal("0")
+            (Decimal(self._in_range_time) / Decimal(self._total_time) * 100)
+            if self._total_time > 0
+            else Decimal("0")
         )
 
         # Buy and hold

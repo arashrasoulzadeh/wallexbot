@@ -61,3 +61,28 @@ def test_grid_search_returns_one_scored_result_per_combination():
     assert len(results) == 2
     assert [r.params.grid_count for r in results] != []
     assert results[0].score >= results[1].score
+
+
+def test_random_search_samples_prices_inside_the_requested_range():
+    """Regression: 'log-uniform' sampling used random.expovariate and produced prices near 0.2."""
+    import random
+
+    from wallexbot.intelligence.optimizer import random_search_optimizer
+
+    random.seed(7)
+    results = random_search_optimizer(
+        param_ranges={
+            "lower_price": (D("80"), D("95")),
+            "upper_price": (D("105"), D("120")),
+            "grid_count": (3, 8),
+        },
+        candles=candles(),
+        base_config=BASE,
+        n_iterations=15,
+    )
+
+    assert results, "random search found nothing to score"
+    for r in results:
+        assert D("80") <= r.params.lower_price <= D("95")
+        assert D("105") <= r.params.upper_price <= D("120")
+        assert 3 <= r.params.grid_count <= 8

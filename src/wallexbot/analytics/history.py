@@ -369,7 +369,7 @@ class HistoryRepository:
                     dedupe_key,
                 ),
             )
-            return cursor.lastrowid
+            return cursor.lastrowid or 0
 
     # Grid cycles
     def record_grid_cycle(

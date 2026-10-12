@@ -28,7 +28,7 @@ class AdaptiveDecision:
     action: AdaptiveAction
     reason: str
     confidence: Decimal
-    params: dict[str, Any] = None
+    params: dict[str, Any] | None = None
 
 
 def recenter_grid(

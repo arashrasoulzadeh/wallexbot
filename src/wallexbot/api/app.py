@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -317,7 +317,7 @@ def create_app(
 
     # WebSocket for live updates
     @app.websocket("/api/stream")
-    async def websocket_stream(websocket):
+    async def websocket_stream(websocket: WebSocket) -> None:
         await websocket.accept()
         try:
             while True:
@@ -330,31 +330,31 @@ def create_app(
     # UI Routes - serve templates
     @app.get("/dashboard")
     async def dashboard(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("base.html", {"request": request})
+        return templates.TemplateResponse(request, "base.html")
 
     @app.get("/configure")
     async def configure_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("configure.html", {"request": request})
+        return templates.TemplateResponse(request, "configure.html")
 
     @app.get("/backtest")
     async def backtest_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("backtest.html", {"request": request})
+        return templates.TemplateResponse(request, "backtest.html")
 
     @app.get("/paper")
     async def paper_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("paper.html", {"request": request})
+        return templates.TemplateResponse(request, "paper.html")
 
     @app.get("/runs")
     async def runs_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("runs.html", {"request": request})
+        return templates.TemplateResponse(request, "runs.html")
 
     @app.get("/history")
     async def history_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("history.html", {"request": request})
+        return templates.TemplateResponse(request, "history.html")
 
     @app.get("/settings")
     async def settings_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse("settings.html", {"request": request})
+        return templates.TemplateResponse(request, "settings.html")
 
     # Serve static files (UI)
     try:

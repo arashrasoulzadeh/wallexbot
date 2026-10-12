@@ -3,6 +3,7 @@
 import json
 import sqlite3
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -22,7 +23,9 @@ class Repository(ABC):
     def list_runs(self) -> list[dict[str, Any]]: ...
 
     @abstractmethod
-    def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None: ...
+    def update_run_status(
+        self, run_id: str, status: str, stopped_at: int | None = None
+    ) -> None: ...
 
     @abstractmethod
     def save_order(self, run_id: str, order: dict[str, Any]) -> str: ...
@@ -43,7 +46,7 @@ class Repository(ABC):
     def save_fill(self, run_id: str, fill: dict[str, Any]) -> int: ...
 
     @abstractmethod
-    def get_fills(self, run_id: str, order_id: str = None) -> list[dict[str, Any]]: ...
+    def get_fills(self, run_id: str, order_id: str | None = None) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     def save_grid_state(self, run_id: str, state: dict[str, Any]) -> None: ...
@@ -62,11 +65,11 @@ class InMemoryRepository(Repository):
     """In-memory repository for testing."""
 
     def __init__(self) -> None:
-        self._runs = {}
-        self._orders = {}
-        self._fills = {}
-        self._grid_states = {}
-        self._events = {}
+        self._runs: dict[str, dict[str, Any]] = {}
+        self._orders: dict[tuple[str, str], dict[str, Any]] = {}
+        self._fills: dict[tuple[str, int], dict[str, Any]] = {}
+        self._grid_states: dict[str, dict[str, Any]] = {}
+        self._events: dict[str, list[dict[str, Any]]] = {}
         self._run_counter = 0
         self._fill_counter = 0
         self._event_counter = 0
@@ -92,14 +95,14 @@ class InMemoryRepository(Repository):
     def list_runs(self) -> list[dict[str, Any]]:
         return list(self._runs.values())
 
-    def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None:
+    def update_run_status(self, run_id: str, status: str, stopped_at: int | None = None) -> None:
         if run_id in self._runs:
             self._runs[run_id]["status"] = status
             if stopped_at:
                 self._runs[run_id]["stopped_at"] = stopped_at
 
     def save_order(self, run_id: str, order: dict[str, Any]) -> str:
-        order_id = order.get("id", f"ord_{len(self._orders) + 1}")
+        order_id: str = order.get("id", f"ord_{len(self._orders) + 1}")
         key = (run_id, order_id)
         self._orders[key] = {**order, "id": order_id, "run_id": run_id}
         return order_id
@@ -133,7 +136,7 @@ class InMemoryRepository(Repository):
         self._fills[key] = {**fill, "id": fill_id, "run_id": run_id}
         return fill_id
 
-    def get_fills(self, run_id: str, order_id: str = None) -> list[dict[str, Any]]:
+    def get_fills(self, run_id: str, order_id: str | None = None) -> list[dict[str, Any]]:
         fills = [f for f in self._fills.values() if f["run_id"] == run_id]
         if order_id:
             fills = [f for f in fills if f["order_id"] == order_id]
@@ -182,7 +185,7 @@ class SQLiteRepository(Repository):
         run_migrations(self._conn)
 
     @contextmanager
-    def _transaction(self) -> Any:
+    def _transaction(self) -> Iterator[sqlite3.Cursor]:
         """Transaction context manager."""
         cursor = self._db.cursor()
         try:
@@ -231,7 +234,7 @@ class SQLiteRepository(Repository):
         cursor.execute("SELECT * FROM runs ORDER BY started_at DESC")
         return [dict(row) for row in cursor.fetchall()]
 
-    def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None:
+    def update_run_status(self, run_id: str, status: str, stopped_at: int | None = None) -> None:
         with self._transaction() as cursor:
             if stopped_at:
                 cursor.execute(
@@ -242,7 +245,7 @@ class SQLiteRepository(Repository):
                 cursor.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
 
     def save_order(self, run_id: str, order: dict[str, Any]) -> str:
-        order_id = order.get("id", f"ord_{order.get('client_id', 'unknown')}")
+        order_id: str = order.get("id", f"ord_{order.get('client_id', 'unknown')}")
 
         with self._transaction() as cursor:
             cursor.execute(
@@ -332,9 +335,9 @@ class SQLiteRepository(Repository):
                     dedupe_key,
                 ),
             )
-            return cursor.lastrowid
+            return cursor.lastrowid or 0
 
-    def get_fills(self, run_id: str, order_id: str = None) -> list[dict[str, Any]]:
+    def get_fills(self, run_id: str, order_id: str | None = None) -> list[dict[str, Any]]:
         cursor = self._db.cursor()
         if order_id:
             cursor.execute(
@@ -386,7 +389,7 @@ class SQLiteRepository(Repository):
                     event.get("timestamp", int(time.time() * 1000)),
                 ),
             )
-            return cursor.lastrowid
+            return cursor.lastrowid or 0
 
     def get_events(self, run_id: str) -> list[dict[str, Any]]:
         cursor = self._db.cursor()

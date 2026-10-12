@@ -185,8 +185,8 @@ class MatchingEngine:
             if not order.is_active:
                 continue
 
-            if order.type == OrderType.MARKET:
-                # Market orders handled separately
+            if order.type == OrderType.MARKET or order.price is None:
+                # Market orders are not matched here (not simulated yet, see docs/AUDIT.md)
                 continue
 
             if order.side == Side.BUY:
@@ -199,8 +199,8 @@ class MatchingEngine:
                     sell_orders.append(order)
 
         # Sort by price-time priority
-        buy_orders.sort(key=lambda o: (-o.price, o.created_at))
-        sell_orders.sort(key=lambda o: (o.price, o.created_at))
+        buy_orders.sort(key=lambda o: (-(o.price or Decimal(0)), o.created_at))
+        sell_orders.sort(key=lambda o: (o.price or Decimal(0), o.created_at))
 
         return {"buy": buy_orders, "sell": sell_orders}
 

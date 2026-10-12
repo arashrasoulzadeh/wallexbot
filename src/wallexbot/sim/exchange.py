@@ -1,10 +1,9 @@
 """Simulated exchange for paper trading."""
 
-import time
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from wallexbot.domain import Clock
+from wallexbot.domain import Clock, SystemClock
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, OrderStatus, OrderType, Side
@@ -12,16 +11,6 @@ from wallexbot.domain.money import quantize_down
 from wallexbot.domain.order import Fill, Order, OrderRequest
 from wallexbot.sim.matching import FillModel, MatchingEngine
 from wallexbot.sim.rate_limiter import RateLimiter
-
-
-class _RealClock:
-    """Real system clock implementation."""
-
-    def now(self) -> float:
-        return time.time()
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)
 
 
 @dataclass
@@ -37,7 +26,7 @@ class SimulatedExchange:
         default=MinNotionalRule(min_notional=Decimal("10"), min_quantity=Decimal("0.0001"))
     )
     fill_model: FillModel = FillModel.CONSERVATIVE
-    clock: Clock = field(default_factory=_RealClock)
+    clock: Clock = field(default_factory=SystemClock)
 
     # Internal fee schedule (set in __post_init__)
     _fee_schedule: FeeSchedule = field(init=False, repr=False)
@@ -151,11 +140,18 @@ class SimulatedExchange:
             total = request.quantity + fee
             self._balances[base_asset] = self._balances[base_asset].lock(total)
 
+    @staticmethod
+    def _limit_price(order: Order) -> Decimal:
+        """Price of a resting order; MARKET orders have none and are not simulated yet."""
+        if order.price is None:
+            raise NotImplementedError("market orders are not simulated yet (see docs/AUDIT.md)")
+        return order.price
+
     def _unlock_funds(self, order: Order) -> None:
         """Unlock funds for canceled order."""
         if order.side == Side.BUY:
             quote_asset = self.market.quote
-            locked_value = order.price * order.remaining_quantity
+            locked_value = self._limit_price(order) * order.remaining_quantity
             fee = self._fee_schedule.calculate_fee_quote(locked_value, is_maker=True)
             total = locked_value + fee
             self._balances[quote_asset] = self._balances[quote_asset].unlock(total)
@@ -204,6 +200,7 @@ class SimulatedExchange:
 
         # Add to matching engine
         if request.type in (OrderType.STOP_LIMIT, OrderType.STOP_MARKET):
+            assert request.stop_price is not None  # checked in validation above
             self._matching_engine.add_stop_order(order, request.stop_price)
         else:
             self._matching_engine.add_order(order)
@@ -280,7 +277,7 @@ class SimulatedExchange:
         if order.side == Side.BUY:
             # Received base, paid quote (already locked)
             # Unlock remaining quote
-            remaining_quote = order.price * order.remaining_quantity
+            remaining_quote = self._limit_price(order) * order.remaining_quantity
             fee = self._fee_schedule.calculate_fee_quote(remaining_quote, is_maker=True)
             total_locked = remaining_quote + fee
             self._balances[self.market.quote] = self._balances[self.market.quote].unlock(
@@ -315,7 +312,7 @@ class SimulatedExchange:
         """Lock funds for an activated stop order."""
         # Similar to _lock_funds but for already-created order
         if order.side == Side.BUY:
-            required = order.price * order.quantity
+            required = self._limit_price(order) * order.quantity
             fee = self._fee_schedule.calculate_fee_quote(required, is_maker=True)
             total = required + fee
             quote_asset = self.market.quote

@@ -88,7 +88,7 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
         import json
 
         class JSONFormatter(logging.Formatter):
-            def format(self, record):
+            def format(self, record: logging.LogRecord) -> str:
                 log_obj = {
                     "timestamp": self.formatTime(record),
                     "level": record.levelname,
@@ -99,7 +99,7 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
                     log_obj["run_id"] = record.run_id
                 return json.dumps(log_obj)
 
-        formatter = JSONFormatter()
+        formatter: logging.Formatter = JSONFormatter()
     else:
         formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -111,7 +111,7 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
     root.handlers = [handler]
 
 
-def main(args: list[str] = None) -> int:
+def main(args: list[str] | None = None) -> int:
     """Main CLI entry point."""
     parser = create_parser()
     parsed = parser.parse_args(args)

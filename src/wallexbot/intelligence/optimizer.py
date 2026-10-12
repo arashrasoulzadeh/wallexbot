@@ -1,5 +1,6 @@
 """Parameter optimizer and validation."""
 
+import math
 import random
 from dataclasses import dataclass
 from decimal import Decimal
@@ -99,12 +100,11 @@ def random_search_optimizer(
             elif isinstance(min_val, Decimal):
                 # Log-uniform for prices, uniform for others
                 if "price" in key:
-                    # Log-uniform sampling
-                    log_min = float(min_val.ln())
-                    log_max = float(max_val.ln())
-                    params_dict[key] = Decimal(
-                        str(random.expovariate(random.uniform(log_min, log_max)))
+                    # Log-uniform sampling between the bounds
+                    sampled = Decimal(
+                        str(math.exp(random.uniform(math.log(min_val), math.log(max_val))))
                     )
+                    params_dict[key] = min(max(sampled, min_val), max_val)
                 else:
                     params_dict[key] = min_val + (max_val - min_val) * Decimal(str(random.random()))
             else:

@@ -1,13 +1,14 @@
 """Strategy plugin registry."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from collections.abc import Callable
+from decimal import Decimal
 
 from pydantic import BaseModel
 
-from wallexbot.domain.market import Market
+from wallexbot.domain.market import Market, Symbol
 from wallexbot.strategy.grid.interface import GridStrategy
-from wallexbot.strategy.grid.parameters import GridParameters
+from wallexbot.strategy.grid.parameters import GridMode, GridParameters
 
 
 class StrategyPlugin(ABC):
@@ -37,10 +38,10 @@ class StrategyRegistry:
     def __init__(self) -> None:
         self._strategies: dict[str, StrategyPlugin] = {}
 
-    def register(self, name: str) -> Any:
+    def register(self, name: str) -> Callable[[type[StrategyPlugin]], type[StrategyPlugin]]:
         """Decorator to register a strategy."""
 
-        def decorator(cls) -> Any:
+        def decorator(cls: type[StrategyPlugin]) -> type[StrategyPlugin]:
             plugin = cls()
             self._strategies[name] = plugin
             return cls
@@ -81,7 +82,7 @@ class StrategyRegistry:
         # Test strategy instantiation
         try:
             market = Market(
-                symbol="USDTTMN",
+                symbol=Symbol("USDTTMN"),
                 base="USDT",
                 quote="TMN",
                 price_precision=2,
@@ -89,11 +90,11 @@ class StrategyRegistry:
                 is_spot=True,
             )
             params = GridParameters(
-                lower_price="90.00",
-                upper_price="110.00",
+                lower_price=Decimal("90.00"),
+                upper_price=Decimal("110.00"),
                 grid_count=10,
-                mode="arithmetic",
-                total_investment="10000.00",
+                mode=GridMode.ARITHMETIC,
+                total_investment=Decimal("10000.00"),
             )
             strategy = plugin.create_strategy(market, params)
 
@@ -102,8 +103,6 @@ class StrategyRegistry:
             for method in required_methods:
                 if not hasattr(strategy, method):
                     errors.append(f"Missing required method: {method}")
-
-            from decimal import Decimal
 
             # Test method signatures
             actions = strategy.on_start(current_price=Decimal("100"), timestamp=0)

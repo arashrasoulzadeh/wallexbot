@@ -2,23 +2,12 @@
 
 import asyncio
 import logging
-import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from wallexbot.domain import Clock
+from wallexbot.domain import Clock, SystemClock
 
 logger = logging.getLogger(__name__)
-
-
-class _RealClock:
-    """Real system clock implementation."""
-
-    def now(self) -> float:
-        return time.time()
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)
 
 
 @dataclass
@@ -28,14 +17,9 @@ class TelegramNotifier:
     bot_token: str
     chat_id: str
     transport: object | None = None  # httpx.AsyncClient or mock
-    clock: Clock = None
-    _queue: asyncio.Queue = None
-    _task: asyncio.Task | None = None
-
-    def __post_init__(self) -> None:
-        if self.clock is None:
-            self.clock = _RealClock()
-        self._queue = asyncio.Queue()
+    clock: Clock = field(default_factory=SystemClock)
+    _queue: asyncio.Queue[dict[str, str]] = field(default_factory=asyncio.Queue, repr=False)
+    _task: asyncio.Task[None] | None = field(default=None, repr=False)
 
     async def start(self) -> None:
         """Start the notifier background task."""
@@ -64,7 +48,7 @@ class TelegramNotifier:
 
     async def _process_queue(self) -> None:
         """Process message queue with rate limiting."""
-        last_sent = 0
+        last_sent = 0.0
         min_interval = 1.0  # Minimum 1 second between messages
 
         while True:
@@ -95,7 +79,7 @@ class TelegramNotifier:
         else:
             await self._do_send(self.transport, message)
 
-    async def _do_send(self, client, message: str) -> None:
+    async def _do_send(self, client: Any, message: str) -> None:
         """Actually send the message."""
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         data = {

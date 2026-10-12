@@ -181,10 +181,11 @@ class SimulationConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Logging configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     level: str = "INFO"
-    json: bool = True
+    # YAML key stays `json`; the attribute is renamed so it does not shadow BaseModel.json()
+    json_output: bool = Field(default=True, alias="json")
     file: str | None = None
 
 
