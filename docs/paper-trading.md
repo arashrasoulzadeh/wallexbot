@@ -77,7 +77,7 @@ you started (its id is remembered in the browser).
 API (JSON, all paper only): `POST /api/paper-runs`, `GET /api/runs`, `GET /api/runs/{id}` (plus
 `/orders`, `/fills`, `/pnl`, `/grid`), `POST /api/runs/{id}/pause|resume|stop|kill`,
 `POST /api/backtests`, `GET /api/backtests/{id}`, `GET /api/config/default`,
-`POST /api/config/validate`, `WS /api/stream?run_id=`. Unknown runs are 404, a request that does not
+`POST /api/config/validate`, `GET /api/markets`, `GET /api/markets/{symbol}/defaults`, `WS /api/stream?run_id=`. Unknown runs are 404, a request that does not
 fit the run's state (e.g. pausing a stopped run) is 409. There is no endpoint that accepts an API key
 and no live mode.
 
@@ -87,6 +87,27 @@ show their stored record.
 
 `POST /api/runs/{id}/recover` continues an interrupted run (404 unknown, 409 if it is already live or
 finished).
+
+## All Wallex coins
+
+Every Wallex spot market (373 at the last check, TMN- and USDT-quoted) can be used, not only USDTTMN.
+
+- The **All coins** page (`/markets`) lists them with price, 24 h change and minimum order; search, filter by
+  quote currency, sort by name or change. Each row links to Configure and to Market status.
+- `GET /api/markets/{symbol}/defaults` returns a starting grid sized for that coin
+  (`src/wallexbot/market_defaults.py`): half-width 1-5 % around the price, spacing about 0.45 %
+  (clear of the round-trip fee), 3-20 levels, and enough capital per level to clear the minimum order after
+  quantity-step rounding. Starting capital defaults to 2,000,000 TMN or 100 USDT. The response says whether the
+  grid passes validation. It is a place to start, not a recommendation; 404 for an unknown market, 422 for one
+  with no price (inactive).
+- Configure loads these values when you pick a coin (or open `/configure?symbol=BTCTMN`); you review and save.
+  Market status accepts `?symbol=` the same way.
+- Wallex does not currently report 24 h turnover for spot markets, so the list cannot be ranked by popularity;
+  the page then sorts by name and shows "-" for turnover.
+- The minimum order shown is Wallex's OTC minimum, used as a hint; the real spot minimum and fee tier are still
+  unknown (placeholders: maker 0.0005, taker 0.001, 90,000 TMN).
+- Tests run the defaults for all 373 recorded markets and start paper runs from them
+  (`tests/unit/test_market_defaults.py`, `tests/unit/api/test_api_live.py`).
 
 ## Crash recovery
 

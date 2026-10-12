@@ -18,7 +18,7 @@ See [backtesting.md](backtesting.md).
 wallexbot ui                  # http://127.0.0.1:8080, runs kept in memory
 wallexbot ui --db runs.db     # keep runs in SQLite
 ```
-Pages: **History**, **Configure** (live checks that the grid can beat its fees, save/reset), **Backtest**,
+Pages: **All coins** (every Wallex market; pick one to load a starting grid), **Market status**, **History**, **Configure** (live checks that the grid can beat its fees, save/reset), **Backtest**,
 **Paper trading** (start, pause, resume, stop, kill switch, live ladder, orders, fills, balances),
 **Runs**, **Dashboard**. English and Persian (RTL) with a switch in the header. The configuration you
 save on the Configure page is kept in the browser and used by Backtest and Paper trading.

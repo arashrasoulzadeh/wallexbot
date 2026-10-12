@@ -118,3 +118,12 @@ Items that look genuinely present: pure grid level generation/sizing/placement, 
 - **Wallex candle API differs from its docs:** `resolution=15` returns 1-minute bars and `240` returns hourly bars; `1` fails for
   multi-day windows (see docs/wallex-api.md). The backtest `--resolution` option and the UI's candle-size list use
   the documented names, so what they select is the API's behaviour, not the label.
+
+### All Wallex coins (2026-10-12)
+
+- Every spot market is usable: market list and per-coin defaults API, All coins page, Configure and Market status
+  take a coin. Defaults are validated for all 373 recorded markets.
+- **Sweep found (fixed):** the per-level capital floor ignored quantity-step rounding loss (ZECTMN, QNTTMN, TAOTMN).
+- **Live data differs from the recorded fixture:** the markets feed now has `quote_volume_24h` for no spot market, so
+  the list cannot be sorted by turnover; my first version sorted by it and showed zeros until the browser check caught it.
+- Still unknown: real spot minimum order and fee tier (D16/D17); the OTC minimum is only a hint.
