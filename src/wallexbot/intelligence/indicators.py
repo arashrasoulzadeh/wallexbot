@@ -1,11 +1,8 @@
 """Technical indicators for market analysis."""
 
 from decimal import Decimal
-from typing import Optional
-from dataclasses import dataclass
 
 from wallexbot.wallex.models import Candle
-from wallexbot.domain.market import Symbol
 
 
 def calculate_atr(candles: list[Candle], period: int = 14) -> Decimal:

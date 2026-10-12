@@ -1,11 +1,11 @@
 """Strategy package for Wallex Grid Bot."""
 
 from wallexbot.strategy.grid import (
-    GridParameters,
     GridMode,
+    GridParameters,
     Level,
-    generate_levels,
     assign_sides,
+    generate_levels,
 )
 
 __all__ = [

@@ -2,13 +2,13 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal, Protocol
+from typing import Literal
 
-from wallexbot.domain.market import Market, Symbol, Side, OrderType
-from wallexbot.strategy.grid.parameters import GridParameters
-from wallexbot.strategy.grid.state import GridState
-from wallexbot.strategy.grid.profit import ProfitTracker
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.domain.market import Market, OrderType, Side, Symbol
+from wallexbot.strategy.grid.parameters import GridParameters
+from wallexbot.strategy.grid.profit import ProfitTracker
+from wallexbot.strategy.grid.state import GridState
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +96,7 @@ class GridStrategy:
 
     def on_start(self, current_price: Decimal, timestamp: int = 0) -> list[Action]:
         """Initialize grid on start."""
-        from wallexbot.strategy.grid.parameters import generate_levels, assign_sides
+        from wallexbot.strategy.grid.parameters import assign_sides, generate_levels
         from wallexbot.strategy.grid.placement import place_initial_grid
         # Generate levels
         levels = generate_levels(
@@ -148,7 +148,7 @@ class GridStrategy:
 
     def on_price(self, current_price: Decimal, timestamp: int = 0) -> list[Action]:
         """Handle price update."""
-        from wallexbot.strategy.grid.range_exit import check_range_exit, RangeExitPolicy
+        from wallexbot.strategy.grid.range_exit import RangeExitPolicy, check_range_exit
 
         actions: list[Action] = []
 

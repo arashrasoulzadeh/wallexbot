@@ -1,12 +1,11 @@
 """Order sizing for grid strategy."""
 
 from decimal import Decimal
-from typing import Literal
 
-from wallexbot.strategy.grid.parameters import Level, GridParameters
-from wallexbot.domain.market import Market, Symbol, Side
 from wallexbot.domain.fees import MinNotionalRule
+from wallexbot.domain.market import Market, Side
 from wallexbot.domain.money import quantize_down
+from wallexbot.strategy.grid.parameters import Level
 
 
 def calculate_equal_quote_qty(
@@ -20,7 +19,7 @@ def calculate_equal_quote_qty(
     Each active level gets total_quote / num_active_levels quote value.
     Quantity = quote_per_level / level_price, rounded down to amount_precision.
     """
-    active_levels = [l for l in levels if l.side in ("buy", "sell")]
+    active_levels = [lvl for lvl in levels if lvl.side in ("buy", "sell")]
     if not active_levels:
         return [Decimal("0") for _ in levels]
 
@@ -73,7 +72,7 @@ def validate_order_sizes(
         (ok, errors): ok is True if all pass, errors list if any fail
     """
     errors = []
-    for level, qty in zip(levels, qtys):
+    for level, qty in zip(levels, qtys, strict=True):
         if level.side not in ("buy", "sell"):
             continue
         ok, msg = rule.validate(level.price, qty)
@@ -94,7 +93,7 @@ def compute_initial_inventory(
     For SELL side: returns base quantity needed
     """
     total = Decimal("0")
-    for level, qty in zip(levels, qtys):
+    for level, qty in zip(levels, qtys, strict=True):
         if level.side == side.value.lower():
             if side == Side.SELL:
                 total += qty

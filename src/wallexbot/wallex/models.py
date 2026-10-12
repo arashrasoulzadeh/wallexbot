@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
-from datetime import datetime
 
 from wallexbot.domain.market import Symbol
 
@@ -47,7 +45,7 @@ class Trade:
     quantity: Decimal
     side: str  # "buy" or "sell"
     timestamp: int
-    trade_id: Optional[str] = None
+    trade_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

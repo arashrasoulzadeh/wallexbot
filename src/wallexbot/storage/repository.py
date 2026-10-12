@@ -1,10 +1,8 @@
 """Repository interface and implementations."""
 
-from abc import ABC, abstractmethod
-from typing import Optional
-import sqlite3
 import json
-from decimal import Decimal
+import sqlite3
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 
 from wallexbot.storage.migrations import run_migrations
@@ -17,7 +15,7 @@ class Repository(ABC):
     def create_run(self, name: str, config: dict) -> str: ...
 
     @abstractmethod
-    def get_run(self, run_id: str) -> Optional[dict]: ...
+    def get_run(self, run_id: str) -> dict | None: ...
 
     @abstractmethod
     def list_runs(self) -> list[dict]: ...
@@ -29,10 +27,10 @@ class Repository(ABC):
     def save_order(self, run_id: str, order: dict) -> str: ...
 
     @abstractmethod
-    def get_order(self, run_id: str, order_id: str) -> Optional[dict]: ...
+    def get_order(self, run_id: str, order_id: str) -> dict | None: ...
 
     @abstractmethod
-    def get_order_by_client_id(self, run_id: str, client_id: str) -> Optional[dict]: ...
+    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict | None: ...
 
     @abstractmethod
     def update_order(self, order_id: str, updates: dict) -> None: ...
@@ -50,7 +48,7 @@ class Repository(ABC):
     def save_grid_state(self, run_id: str, state: dict) -> None: ...
 
     @abstractmethod
-    def get_grid_state(self, run_id: str) -> Optional[dict]: ...
+    def get_grid_state(self, run_id: str) -> dict | None: ...
 
     @abstractmethod
     def save_event(self, run_id: str, event: dict) -> int: ...
@@ -86,7 +84,7 @@ class InMemoryRepository(Repository):
         }
         return run_id
 
-    def get_run(self, run_id: str) -> Optional[dict]:
+    def get_run(self, run_id: str) -> dict | None:
         return self._runs.get(run_id)
 
     def list_runs(self) -> list[dict]:
@@ -104,10 +102,10 @@ class InMemoryRepository(Repository):
         self._orders[key] = {**order, 'id': order_id, 'run_id': run_id}
         return order_id
 
-    def get_order(self, run_id: str, order_id: str) -> Optional[dict]:
+    def get_order(self, run_id: str, order_id: str) -> dict | None:
         return self._orders.get((run_id, order_id))
 
-    def get_order_by_client_id(self, run_id: str, client_id: str) -> Optional[dict]:
+    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict | None:
         for order in self._orders.values():
             if order['run_id'] == run_id and order['client_id'] == client_id:
                 return order
@@ -142,7 +140,7 @@ class InMemoryRepository(Repository):
         import time
         self._grid_states[run_id] = {**state, 'updated_at': int(time.time() * 1000)}
 
-    def get_grid_state(self, run_id: str) -> Optional[dict]:
+    def get_grid_state(self, run_id: str) -> dict | None:
         return self._grid_states.get(run_id)
 
     def save_event(self, run_id: str, event: dict) -> int:
@@ -161,7 +159,7 @@ class SQLiteRepository(Repository):
 
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._init_db()
 
     def _init_db(self) -> None:
@@ -203,7 +201,7 @@ class SQLiteRepository(Repository):
             ))
         return run_id
 
-    def get_run(self, run_id: str) -> Optional[dict]:
+    def get_run(self, run_id: str) -> dict | None:
         cursor = self._conn.cursor()
         cursor.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
         row = cursor.fetchone()
@@ -258,13 +256,13 @@ class SQLiteRepository(Repository):
             ))
         return order_id
 
-    def get_order(self, run_id: str, order_id: str) -> Optional[dict]:
+    def get_order(self, run_id: str, order_id: str) -> dict | None:
         cursor = self._conn.cursor()
         cursor.execute("SELECT * FROM orders WHERE run_id = ? AND id = ?", (run_id, order_id))
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def get_order_by_client_id(self, run_id: str, client_id: str) -> Optional[dict]:
+    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict | None:
         cursor = self._conn.cursor()
         cursor.execute("SELECT * FROM orders WHERE run_id = ? AND client_id = ?", (run_id, client_id))
         row = cursor.fetchone()
@@ -318,8 +316,8 @@ class SQLiteRepository(Repository):
         return [dict(row) for row in cursor.fetchall()]
 
     def save_grid_state(self, run_id: str, state: dict) -> None:
-        import time
         import json
+        import time
         levels_json = json.dumps(state.get('levels', []))
 
         with self._transaction() as cursor:
@@ -328,7 +326,7 @@ class SQLiteRepository(Repository):
                 VALUES (?, ?, ?)
             """, (run_id, levels_json, int(time.time() * 1000)))
 
-    def get_grid_state(self, run_id: str) -> Optional[dict]:
+    def get_grid_state(self, run_id: str) -> dict | None:
         cursor = self._conn.cursor()
         cursor.execute("SELECT * FROM grid_state WHERE run_id = ?", (run_id,))
         row = cursor.fetchone()

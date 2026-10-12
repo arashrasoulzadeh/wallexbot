@@ -1,21 +1,18 @@
 """Action executor for translating strategy actions to exchange calls."""
 
-from dataclasses import dataclass
-from decimal import Decimal
-from typing import Optional
 import uuid
+from dataclasses import dataclass
 
+from wallexbot.domain import Clock
+from wallexbot.domain.order import OrderRequest
+from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.strategy.grid.interface import (
     Action,
-    PlaceAction,
+    AlertAction,
     CancelAction,
     PauseAction,
-    AlertAction,
+    PlaceAction,
 )
-from wallexbot.sim.exchange import SimulatedExchange
-from wallexbot.domain.order import OrderRequest
-from wallexbot.domain.market import Symbol, Side, OrderType, OrderStatus
-from wallexbot.domain import Clock
 
 
 @dataclass

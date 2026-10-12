@@ -1,12 +1,14 @@
 """Smart grid setup suggestions."""
 
-from decimal import Decimal
-from typing import Optional
 from dataclasses import dataclass
+from decimal import Decimal
 
+from wallexbot.intelligence.indicators import (
+    calculate_atr,
+    calculate_percentile_in_range,
+    detect_regime,
+)
 from wallexbot.wallex.models import Candle
-from wallexbot.domain.market import Symbol
-from wallexbot.intelligence.indicators import calculate_atr, detect_regime, calculate_percentile_in_range
 
 
 @dataclass
@@ -236,9 +238,6 @@ def should_run_grid(
         )
 
     regime = detect_regime(candles)
-    atr = calculate_atr(candles)
-    current_price = candles[-1].close
-    atr_pct = atr / current_price
 
     # Grid works best in ranging markets with moderate volatility
     if regime in ("trending_up", "trending_down"):
@@ -251,7 +250,6 @@ def should_run_grid(
 
     if regime == "volatile":
         # High volatility can be good IF spacing covers fees
-        range_sugg = suggest_range(candles, capital)
         spacing_sugg = suggest_spacing(candles, capital, fee_rate)
 
         if spacing_sugg.min_profit_per_grid > 0:
@@ -270,7 +268,6 @@ def should_run_grid(
             )
 
     # Ranging market
-    range_sugg = suggest_range(candles, capital)
     spacing_sugg = suggest_spacing(candles, capital, fee_rate)
 
     if spacing_sugg.min_profit_per_grid <= 0:
@@ -293,7 +290,7 @@ def should_run_grid(
 
     return GridRunDecision(
         should_run=True,
-        reason=f"Ranging market, volatility OK, price in middle of range",
+        reason="Ranging market, volatility OK, price in middle of range",
         regime=regime,
         confidence=Decimal("0.8"),
     )

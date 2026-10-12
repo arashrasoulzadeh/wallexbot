@@ -1,12 +1,11 @@
 """Order, OrderRequest, Fill, and Trade models."""
 
+import re
 from dataclasses import dataclass, replace
 from decimal import Decimal
-import re
 
-from wallexbot.domain.market import Symbol, Side, OrderType, OrderStatus
+from wallexbot.domain.market import OrderStatus, OrderType, Side, Symbol
 from wallexbot.domain.money import quantize_down
-
 
 _CLIENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 

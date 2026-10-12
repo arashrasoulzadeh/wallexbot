@@ -1,18 +1,16 @@
 """Parameter optimizer and validation."""
 
-from decimal import Decimal
-from dataclasses import dataclass
-from typing import Optional
 import random
-from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
+from decimal import Decimal
 
 from wallexbot.analytics.backtest import Backtester, BacktestResult
-from wallexbot.strategy.grid.parameters import GridParameters, GridMode
+from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, Symbol
 from wallexbot.sim.exchange import SimulatedExchange
-from wallexbot.wallex.price_feed import PriceFeedReplay, PriceTick
-from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.strategy.grid.parameters import GridParameters
+from wallexbot.wallex.price_feed import PriceFeedReplay, PriceTick
 
 
 @dataclass
@@ -45,7 +43,7 @@ def grid_search_optimizer(
     combinations = list(itertools.product(*values))
 
     for combo in combinations:
-        params_dict = dict(zip(keys, combo))
+        params_dict = dict(zip(keys, combo, strict=True))
 
         # Create grid parameters
         grid_params = GridParameters(
@@ -268,7 +266,7 @@ def _run_single_backtest(
     params: GridParameters,
     candles: list,
     base_config: dict,
-) -> Optional[BacktestResult]:
+) -> BacktestResult | None:
     """Run a single backtest with given parameters."""
     try:
         market = Market(

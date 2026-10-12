@@ -4,11 +4,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-from wallexbot.strategy.grid.parameters import Level, GridParameters
-from wallexbot.domain.market import Market, Symbol, Side, OrderType
-from wallexbot.domain.order import OrderRequest
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.domain.market import Market, OrderType, Side, Symbol
 from wallexbot.domain.money import quantize_down
+from wallexbot.strategy.grid.parameters import GridParameters, Level
 
 
 @dataclass(frozen=True, slots=True)

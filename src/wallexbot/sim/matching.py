@@ -3,11 +3,10 @@
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
 
-from wallexbot.domain.market import Market, Symbol, Side, OrderType, OrderStatus
-from wallexbot.domain.order import Order, Fill
 from wallexbot.domain.fees import FeeSchedule
+from wallexbot.domain.market import Market, OrderStatus, OrderType, Side
+from wallexbot.domain.order import Fill, Order
 
 
 class FillModel(str, Enum):
@@ -36,11 +35,11 @@ class MatchingEngine:
         """Add a stop order."""
         self._stop_orders[order.id] = (order, stop_price)
 
-    def remove_order(self, order_id: str) -> Optional[Order]:
+    def remove_order(self, order_id: str) -> Order | None:
         """Remove and return an order."""
         return self._orders.pop(order_id, None)
 
-    def get_order(self, order_id: str) -> Optional[Order]:
+    def get_order(self, order_id: str) -> Order | None:
         """Get order by ID."""
         return self._orders.get(order_id)
 

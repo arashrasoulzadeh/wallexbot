@@ -3,11 +3,11 @@
 from wallexbot.config.schema import (
     Config,
     ExchangeConfig,
-    MarketConfig,
     GridStrategyConfig,
+    LoggingConfig,
+    MarketConfig,
     RiskConfig,
     SimulationConfig,
-    LoggingConfig,
     load_config,
     validate_config,
 )

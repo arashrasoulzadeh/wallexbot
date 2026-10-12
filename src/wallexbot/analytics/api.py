@@ -1,13 +1,14 @@
 """Analytics API endpoints."""
 
+
 from fastapi import APIRouter, Query
-from typing import Optional
+
 from wallexbot.analytics.history import HistoryRepository
 
 router = APIRouter(prefix="/api/history", tags=["history"])
 
 # Global history repository (initialized on startup)
-_history_repo: Optional[HistoryRepository] = None
+_history_repo: HistoryRepository | None = None
 
 
 def get_history_repo() -> HistoryRepository:
@@ -22,7 +23,7 @@ async def get_prices(
     market: str = Query(...),
     from_ts: int = Query(...),
     to_ts: int = Query(...),
-    run_id: Optional[str] = Query(None),
+    run_id: str | None = Query(None),
     limit: int = Query(1000),
 ):
     repo = get_history_repo()
@@ -37,7 +38,7 @@ async def get_trades(
     to_ts: int = Query(...),
     limit: int = Query(1000),
 ):
-    repo = get_history_repo()
+    _repo = get_history_repo()  # TODO: stub endpoint, not yet backed by the history store
     # Implementation would query market_trades table
     return []
 
@@ -57,10 +58,10 @@ async def get_candles(
 @router.get("/orders")
 async def get_orders(
     run_id: str = Query(...),
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+    from_ts: int | None = Query(None),
+    to_ts: int | None = Query(None),
 ):
-    repo = get_history_repo()
+    _repo = get_history_repo()  # TODO: stub endpoint, not yet backed by the history store
     # Implementation would query orders table
     return []
 
@@ -68,10 +69,10 @@ async def get_orders(
 @router.get("/fills")
 async def get_fills(
     run_id: str = Query(...),
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+    from_ts: int | None = Query(None),
+    to_ts: int | None = Query(None),
 ):
-    repo = get_history_repo()
+    _repo = get_history_repo()  # TODO: stub endpoint, not yet backed by the history store
     # Implementation would query fills table
     return []
 
@@ -80,7 +81,7 @@ async def get_fills(
 async def get_cycles(
     run_id: str = Query(...),
 ):
-    repo = get_history_repo()
+    _repo = get_history_repo()  # TODO: stub endpoint, not yet backed by the history store
     # Implementation would query grid_cycles table
     return []
 
@@ -88,10 +89,10 @@ async def get_cycles(
 @router.get("/balances")
 async def get_balances(
     run_id: str = Query(...),
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+    from_ts: int | None = Query(None),
+    to_ts: int | None = Query(None),
 ):
-    repo = get_history_repo()
+    _repo = get_history_repo()  # TODO: stub endpoint, not yet backed by the history store
     # Implementation would query balance_snapshots table
     return []
 
@@ -109,10 +110,10 @@ async def get_pnl(
 @router.get("/events")
 async def get_events(
     run_id: str = Query(...),
-    from_ts: Optional[int] = Query(None),
-    to_ts: Optional[int] = Query(None),
+    from_ts: int | None = Query(None),
+    to_ts: int | None = Query(None),
 ):
-    repo = get_history_repo()
+    _repo = get_history_repo()  # TODO: stub endpoint, not yet backed by the history store
     # Implementation would query run_events table
     return []
 

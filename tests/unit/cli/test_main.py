@@ -58,18 +58,7 @@ logging:
   level: "INFO"
 """)
 
-        with patch("wallexbot.cli.main.validate_config") as mock_validate:
-            mock_config = Mock()
-            mock_config.market.symbol = Symbol("USDTTMN")
-            mock_config.strategy.grid.lower_price = Decimal("90.00")
-            mock_config.strategy.grid.upper_price = Decimal("110.00")
-            mock_config.strategy.grid.grid_count = 10
-            mock_config.strategy.grid.spacing = Decimal("2.00")
-            mock_config.strategy.grid.per_grid_investment = Decimal("1000.00")
-            mock_config.strategy.grid.min_profit_per_cycle_after_fees = Decimal("1.50")
-            mock_validate.return_value = mock_config
-
-            main(["config", "check", str(config_file)])
+        main(["config", "check", str(config_file)])
 
         captured = capsys.readouterr()
         assert "valid" in captured.out.lower()

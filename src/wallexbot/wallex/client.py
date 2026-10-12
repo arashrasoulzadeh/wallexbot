@@ -1,15 +1,15 @@
 """Wallex REST client for public endpoints."""
 
-from dataclasses import dataclass
-from decimal import Decimal
-from typing import Optional, Protocol
-import httpx
 import time
+from dataclasses import dataclass
+from typing import Protocol
 
-from wallexbot.wallex.models import Market, Depth, Trade, Candle, OrderBookLevel
+import httpx
+
+from wallexbot.domain import Clock
 from wallexbot.domain.market import Symbol
 from wallexbot.domain.money import parse_wire_string
-from wallexbot.domain import Clock
+from wallexbot.wallex.models import Candle, Depth, Market, OrderBookLevel, Trade
 
 
 class Transport(Protocol):
@@ -23,7 +23,7 @@ class WallexRestClient:
     """Wallex public REST API client."""
 
     base_url: str = "https://api.wallex.ir"
-    transport: Optional[Transport] = None
+    transport: Transport | None = None
     clock: Clock = None
     _client: httpx.AsyncClient = None
 
@@ -149,14 +149,14 @@ class WallexRestClient:
         volumes = result.get("v", [])
 
         candles = []
-        for t, o, h, l, c, v in zip(timestamps, opens, highs, lows, closes, volumes):
+        for t, o, h, low, c, v in zip(timestamps, opens, highs, lows, closes, volumes, strict=True):
             candles.append(Candle(
                 symbol=Symbol(symbol),
                 resolution=resolution,
                 open_time=t,
                 open=parse_wire_string(o),
                 high=parse_wire_string(h),
-                low=parse_wire_string(l),
+                low=parse_wire_string(low),
                 close=parse_wire_string(c),
                 volume=parse_wire_string(v),
             ))

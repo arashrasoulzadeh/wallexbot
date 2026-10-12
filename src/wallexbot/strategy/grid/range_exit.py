@@ -6,7 +6,6 @@ from enum import Enum
 from typing import Literal
 
 from wallexbot.strategy.grid.parameters import GridParameters
-from wallexbot.domain.market import Symbol
 
 
 class RangeExitPolicy(str, Enum):

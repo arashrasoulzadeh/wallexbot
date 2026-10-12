@@ -1,13 +1,12 @@
 """Historical data store for backtesting."""
 
+import csv
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
-import csv
 
-from wallexbot.wallex.models import Candle
 from wallexbot.domain.market import Symbol
+from wallexbot.wallex.models import Candle
 
 
 @dataclass

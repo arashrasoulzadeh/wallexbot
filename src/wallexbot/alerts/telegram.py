@@ -1,13 +1,11 @@
 """Telegram notifier for alerts."""
 
-from dataclasses import dataclass
-from typing import Optional
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 
 from wallexbot.domain import Clock
-
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +26,10 @@ class TelegramNotifier:
 
     bot_token: str
     chat_id: str
-    transport: Optional[object] = None  # httpx.AsyncClient or mock
+    transport: object | None = None  # httpx.AsyncClient or mock
     clock: Clock = None
     _queue: asyncio.Queue = None
-    _task: Optional[asyncio.Task] = None
+    _task: asyncio.Task | None = None
 
     def __post_init__(self) -> None:
         if self.clock is None:

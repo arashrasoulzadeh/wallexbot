@@ -2,15 +2,11 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional
-import asyncio
 
-from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.domain.market import Side
 from wallexbot.sim.exchange import SimulatedExchange
+from wallexbot.strategy.grid.interface import GridStrategy
 from wallexbot.wallex.price_feed import PriceFeed, PriceFeedReplay, PriceTick
-from wallexbot.domain.market import Symbol
-from wallexbot.domain.fees import FeeSchedule
-from wallexbot.domain import Clock
 
 
 @dataclass
@@ -71,11 +67,11 @@ class Backtester:
         self.exchange = exchange
         self.price_feed = price_feed
         self._clock = _BacktestClock()
-        self._initial_equity: Optional[Decimal] = None
-        self._peak_equity: Optional[Decimal] = None
+        self._initial_equity: Decimal | None = None
+        self._peak_equity: Decimal | None = None
         self._in_range_time = 0
         self._total_time = 0
-        self._last_price: Optional[Decimal] = None
+        self._last_price: Decimal | None = None
 
     def run(self) -> BacktestResult:
         """Run backtest and return results."""
@@ -138,9 +134,8 @@ class Backtester:
 
     def _execute_action(self, action) -> None:
         """Execute action on exchange."""
-        from wallexbot.strategy.grid.interface import PlaceAction, CancelAction
         from wallexbot.domain.order import OrderRequest
-        from wallexbot.domain.market import Side, OrderType
+        from wallexbot.strategy.grid.interface import CancelAction, PlaceAction
 
         if isinstance(action, PlaceAction):
             request = OrderRequest(
@@ -194,7 +189,7 @@ class Backtester:
                 # Update order in exchange
                 self.exchange.process_trade(order.price, fill_qty, timestamp)
 
-    def _find_level_for_order(self, order_id: str) -> Optional[int]:
+    def _find_level_for_order(self, order_id: str) -> int | None:
         """Find level index for order."""
         # This would need access to strategy state
         # For now, return None

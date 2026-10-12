@@ -1,5 +1,5 @@
 """API package."""
 
-from wallexbot.api.app import create_app, EngineManager
+from wallexbot.api.app import EngineManager, create_app
 
 __all__ = ["create_app", "EngineManager"]

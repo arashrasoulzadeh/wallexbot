@@ -1,13 +1,9 @@
 """History and analytics storage."""
 
+import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional
-import sqlite3
-import json
-from contextlib import contextmanager
-
-from wallexbot.storage.repository import Repository
 
 
 @dataclass
@@ -15,7 +11,7 @@ class HistoryRepository:
     """Extended repository for full history analytics."""
 
     db_path: str
-    _conn: Optional[sqlite3.Connection] = None
+    _conn: sqlite3.Connection | None = None
 
     def __post_init__(self) -> None:
         self._init_db()

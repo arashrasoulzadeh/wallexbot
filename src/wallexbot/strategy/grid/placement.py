@@ -4,17 +4,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-from wallexbot.strategy.grid.parameters import Level, GridParameters
-from wallexbot.strategy.grid.sizing import (
-    calculate_equal_quote_qty,
-    calculate_equal_base_qty,
-    validate_order_sizes,
-    compute_initial_inventory,
-)
-from wallexbot.domain.market import Market, Symbol, Side, OrderType
-from wallexbot.domain.order import OrderRequest
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-from wallexbot.domain.money import quantize_down
+from wallexbot.domain.market import Market, OrderType, Side, Symbol
+from wallexbot.strategy.grid.parameters import GridParameters, Level
+from wallexbot.strategy.grid.sizing import (
+    calculate_equal_base_qty,
+    calculate_equal_quote_qty,
+    compute_initial_inventory,
+    validate_order_sizes,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +68,7 @@ def place_initial_grid(
     # Generate orders
     orders = []
     skipped_index = None
-    for level, qty in zip(levels, qtys):
+    for level, qty in zip(levels, qtys, strict=True):
         if level.side == "":
             skipped_index = level.index
             continue

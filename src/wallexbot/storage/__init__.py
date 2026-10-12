@@ -1,7 +1,7 @@
 """Storage package for persistence."""
 
-from wallexbot.storage.repository import Repository, SQLiteRepository, InMemoryRepository
-from wallexbot.storage.migrations import run_migrations, MIGRATIONS
+from wallexbot.storage.migrations import MIGRATIONS, run_migrations
+from wallexbot.storage.repository import InMemoryRepository, Repository, SQLiteRepository
 
 __all__ = [
     "Repository",

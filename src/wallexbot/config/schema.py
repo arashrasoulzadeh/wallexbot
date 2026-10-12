@@ -1,11 +1,11 @@
 """Configuration schema using Pydantic v2."""
 
 from decimal import Decimal
-from typing import ClassVar
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from wallexbot.domain.market import Symbol
 from wallexbot.strategy.grid.parameters import GridMode
@@ -235,7 +235,6 @@ def validate_config(data: dict, env_overrides: bool = False) -> Config:
     """
     # Apply env overrides if requested
     if env_overrides:
-        import os
         data = _apply_env_overrides(data)
 
     # Check for forbidden keys (api_key, secret, etc.)
@@ -299,6 +298,3 @@ def load_config(path: str | Path) -> Config:
     with open(path) as f:
         data = yaml.safe_load(f)
     return validate_config(data)
-
-
-import yaml

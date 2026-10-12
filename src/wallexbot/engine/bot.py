@@ -1,17 +1,12 @@
 """Bot engine - wires strategy, exchange, and data feed."""
 
+import asyncio
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional
-import asyncio
-import signal
 
-from wallexbot.engine.config import EngineConfig
 from wallexbot.engine.actions import ActionExecutor
-from wallexbot.strategy.grid.interface import GridStrategy, Action
-from wallexbot.sim.exchange import SimulatedExchange
-from wallexbot.wallex.price_feed import PriceFeed, PriceTick
-from wallexbot.domain import Clock
+from wallexbot.engine.config import EngineConfig
+from wallexbot.wallex.price_feed import PriceTick
 
 
 @dataclass
@@ -22,8 +17,8 @@ class BotEngine:
     _running: bool = field(default=False, init=False)
     _halted: bool = field(default=False, init=False)
     _executor: ActionExecutor = field(init=False)
-    _price_task: Optional[asyncio.Task] = field(default=None, init=False)
-    _poll_task: Optional[asyncio.Task] = field(default=None, init=False)
+    _price_task: asyncio.Task | None = field(default=None, init=False)
+    _poll_task: asyncio.Task | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         self._executor = ActionExecutor(
@@ -47,12 +42,8 @@ class BotEngine:
         # 1. Load and validate config (already done)
 
         # 2. Fetch market info and fee schedule
-        market = self.config.exchange.market_info()
-        fee_schedule = self.config.exchange.fee_schedule()
-
-        # 3. Check balances sufficient for grid
-        balances = self.config.exchange.balances()
-        # Strategy will validate in on_start
+        # TODO (docs/AUDIT.md): market info, fee schedule and balance checks are not wired yet;
+        # the strategy validates order sizes in on_start.
 
         # 4. Reconcile with existing open orders (Phase 9)
 
@@ -80,7 +71,7 @@ class BotEngine:
                     break
 
                 await self._handle_price_tick(tick)
-        except Exception as e:
+        except Exception:
             # Log error
             pass
 
@@ -105,11 +96,11 @@ class BotEngine:
                 break
 
             # Poll open orders and diff to infer fills
-            open_orders = self.config.exchange.open_orders()
+            # TODO (docs/AUDIT.md): diff open orders against strategy state to infer fills.
             # Compare with strategy state to infer fills
             # This is a simplified implementation
 
-    async def process_next_tick(self) -> Optional[PriceTick]:
+    async def process_next_tick(self) -> PriceTick | None:
         """Process next tick from feed (for testing)."""
         # This would pull from the feed
         pass

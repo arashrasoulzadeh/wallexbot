@@ -1,6 +1,7 @@
 """Clock protocol for time-dependent operations."""
 
 from __future__ import annotations
+
 from typing import Protocol
 
 

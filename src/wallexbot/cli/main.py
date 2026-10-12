@@ -1,21 +1,12 @@
 """Main CLI entry point."""
 
 import argparse
-import sys
-import json
 import logging
-from pathlib import Path
-from typing import Optional
+import sys
 
-from wallexbot.config.schema import load_config, validate_config
-from wallexbot.domain.market import Symbol
+from wallexbot.config.schema import load_config
+from wallexbot.strategy.grid.parameters import GridMode
 from wallexbot.wallex.client import WallexRestClient
-from wallexbot.analytics.backtest import Backtester
-from wallexbot.strategy.grid.interface import GridStrategy
-from wallexbot.strategy.grid.parameters import GridParameters, GridMode
-from wallexbot.sim.exchange import SimulatedExchange
-from wallexbot.wallex.price_feed import PriceFeedReplay
-from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -190,7 +181,7 @@ def cmd_config_check(config_file: str) -> int:
         return 1
 
 
-def cmd_fetch_candles(symbol: str, resolution: str, from_ts: str, to_ts: str, output: Optional[str]) -> int:
+def cmd_fetch_candles(symbol: str, resolution: str, from_ts: str, to_ts: str, output: str | None) -> int:
     """Download candles."""
     client = WallexRestClient()
 
@@ -225,7 +216,7 @@ def _parse_date(date_str: str) -> int:
         return int(date_str)
 
 
-def cmd_backtest(config_file: str, from_ts: str, to_ts: str, output: Optional[str]) -> int:
+def cmd_backtest(config_file: str, from_ts: str, to_ts: str, output: str | None) -> int:
     """Run backtest."""
     print("Running backtest...")
     # This is a placeholder - full implementation would load data and run
@@ -271,9 +262,10 @@ def cmd_ui(host: str, port: int) -> int:
     print("Press Ctrl+C to stop")
     # This would start the FastAPI server
     import uvicorn
+
     from wallexbot.api.app import create_app
     from wallexbot.storage.repository import InMemoryRepository
-    
+
     repo = InMemoryRepository()
     app = create_app(repo=repo)
     uvicorn.run(app, host=host, port=port)
@@ -282,69 +274,72 @@ def cmd_ui(host: str, port: int) -> int:
 
 def cmd_suggest(market: str, capital: str) -> int:
     """Get intelligent grid suggestions."""
-    from wallexbot.intelligence.smart_grid import suggest_range, suggest_spacing, suggest_capital_allocation, should_run_grid
-    from wallexbot.wallex.client import WallexRestClient
-    from wallexbot.domain.market import Symbol
     from decimal import Decimal
-    
+
+    from wallexbot.intelligence.smart_grid import (
+        should_run_grid,
+        suggest_range,
+        suggest_spacing,
+    )
+    from wallexbot.wallex.client import WallexRestClient
+
     print(f"Analyzing {market} with {capital} capital...")
-    
+
     client = WallexRestClient()
     candles = client.get_candles(market, "60", 0, 0)  # Get recent candles
-    
+
     if not candles:
         print("No candle data available")
         return 1
-    
+
     capital_dec = Decimal(capital)
-    
+
     # Get suggestions
     range_sugg = suggest_range(candles, capital_dec)
     spacing_sugg = suggest_spacing(candles, capital_dec, Decimal("0.001"))
     decision = should_run_grid(candles, capital_dec)
-    
-    print(f"\nRange Suggestion:")
+
+    print("\nRange Suggestion:")
     print(f"  Lower: {range_sugg.lower:.2f}")
     print(f"  Upper: {range_sugg.upper:.2f}")
     print(f"  Reasoning: {range_sugg.reasoning}")
-    
-    print(f"\nSpacing Suggestion:")
+
+    print("\nSpacing Suggestion:")
     print(f"  Spacing: {spacing_sugg.spacing:.4f}")
     print(f"  Grid Count: {spacing_sugg.grid_count}")
     print(f"  Min Profit/Grid: {spacing_sugg.min_profit_per_grid:.4f}")
     print(f"  Reasoning: {spacing_sugg.reasoning}")
-    
-    print(f"\nRun Decision:")
+
+    print("\nRun Decision:")
     print(f"  Should Run: {decision.should_run}")
     print(f"  Regime: {decision.regime}")
     print(f"  Reason: {decision.reason}")
     print(f"  Confidence: {decision.confidence:.0%}")
-    
+
     return 0
 
 
 def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
     """Run parameter optimization."""
+    from decimal import Decimal
+
     from wallexbot.intelligence.optimizer import random_search_optimizer
     from wallexbot.wallex.client import WallexRestClient
-    from wallexbot.strategy.grid.parameters import GridParameters, GridMode
-    from wallexbot.domain.market import Market, Symbol
-    from decimal import Decimal
-    
+
     print(f"Optimizing {market} from {from_ts} to {to_ts} ({iterations} iterations)...")
-    
+
     client = WallexRestClient()
-    
+
     # Parse timestamps
     from_ts_int = int(from_ts) if from_ts.isdigit() else _parse_date(from_ts)
     to_ts_int = int(to_ts) if to_ts.isdigit() else _parse_date(to_ts)
-    
+
     candles = client.get_candles(market, "60", from_ts_int, to_ts_int)
-    
+
     if not candles:
         print("No candle data available")
         return 1
-    
+
     # Define parameter ranges
     param_ranges = {
         "lower_price": (Decimal("80.00"), Decimal("95.00")),
@@ -353,7 +348,7 @@ def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
         "mode": [GridMode.ARITHMETIC, GridMode.GEOMETRIC],
         "total_investment": (Decimal("1000000"), Decimal("5000000")),
     }
-    
+
     base_config = {
         "lower_price": Decimal("90.00"),
         "upper_price": Decimal("110.00"),
@@ -361,7 +356,7 @@ def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
         "mode": GridMode.ARITHMETIC,
         "total_investment": Decimal("2000000"),
     }
-    
+
     results = random_search_optimizer(
         param_ranges=param_ranges,
         candles=candles,
@@ -369,8 +364,8 @@ def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
         n_iterations=iterations,
         objective="risk_adjusted_return",
     )
-    
-    print(f"\nTop 5 Results:")
+
+    print("\nTop 5 Results:")
     for i, r in enumerate(results[:5]):
         print(f"  {i+1}. Score: {r.score:.4f}")
         print(f"     Range: {r.params.lower_price} - {r.params.upper_price}")
@@ -379,42 +374,42 @@ def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
         print(f"     Return: {r.metrics.total_return_pct:.2f}%")
         print(f"     Max DD: {r.metrics.max_drawdown:.2f}%")
         print(f"     Cycles: {r.metrics.completed_cycles}")
-    
+
     return 0
 
 
 def cmd_regime(market: str, period: int) -> int:
     """Check current market regime."""
-    from wallexbot.intelligence.indicators import detect_regime, calculate_atr, calculate_adx
+    from wallexbot.intelligence.indicators import calculate_adx, calculate_atr, detect_regime
     from wallexbot.wallex.client import WallexRestClient
-    
+
     print(f"Analyzing regime for {market} (period={period})...")
-    
+
     client = WallexRestClient()
     candles = client.get_candles(market, "60", 0, 0)
-    
+
     if not candles:
         print("No candle data available")
         return 1
-    
+
     # Use recent candles
     recent = candles[-period:] if len(candles) >= period else candles
-    
+
     regime = detect_regime(recent)
     atr = calculate_atr(recent)
     adx = calculate_adx(recent)
-    
+
     print(f"\nMarket Regime: {regime.upper()}")
     print(f"ATR: {atr:.4f}")
     print(f"ADX: {adx:.2f}")
-    
+
     if regime == "ranging":
         print("✓ Good for grid trading")
     elif regime == "volatile":
         print("⚠ Volatile - check spacing covers fees")
     else:
         print("✗ Trending - grid may accumulate losses")
-    
+
     return 0
 
 

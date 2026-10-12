@@ -1,13 +1,12 @@
 """Adaptive behavior for running grid."""
 
-from decimal import Decimal
 from dataclasses import dataclass
-from typing import Optional
+from decimal import Decimal
 from enum import Enum
 
+from wallexbot.intelligence.indicators import calculate_atr, calculate_donchian, detect_regime
+from wallexbot.strategy.grid.parameters import GridParameters
 from wallexbot.wallex.models import Candle
-from wallexbot.intelligence.indicators import calculate_atr, detect_regime, calculate_donchian
-from wallexbot.strategy.grid.parameters import GridParameters, GridMode
 
 
 class AdaptiveAction(str, Enum):
@@ -109,7 +108,6 @@ def dynamic_spacing(
 
     atr = calculate_atr(candles, period=14)
     current_price = candles[-1].close
-    atr_pct = atr / current_price
 
     # Current spacing
     if current_params.grid_count > 1:

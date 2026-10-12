@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional
 
 from wallexbot.strategy.grid.parameters import Level
 
@@ -48,7 +47,7 @@ class GridState:
         self.filled_qty.pop(level_index, None)
         self.filled_fee.pop(level_index, None)
 
-    def clear_active_order(self, level_index: int) -> Optional[str]:
+    def clear_active_order(self, level_index: int) -> str | None:
         """Clear active order for a level, return the order_id."""
         self.order_sides.pop(level_index, None)
         self.order_qty.pop(level_index, None)
@@ -64,7 +63,7 @@ class GridState:
         self.filled_fee[level_index] = total_fee
         return total_qty, total_fee
 
-    def get_level_for_order(self, order_id: str) -> Optional[int]:
+    def get_level_for_order(self, order_id: str) -> int | None:
         """Find level index for an order_id."""
         for idx, oid in self.active_orders.items():
             if oid == order_id:

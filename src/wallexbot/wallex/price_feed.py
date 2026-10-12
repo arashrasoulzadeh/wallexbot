@@ -1,12 +1,11 @@
 """Price feed abstraction for market data."""
 
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol, AsyncGenerator, Optional
-from datetime import datetime
+from typing import Protocol
 
 from wallexbot.domain.market import Symbol
-from wallexbot.wallex.models import Trade, Depth
 
 
 @dataclass(frozen=True, slots=True)

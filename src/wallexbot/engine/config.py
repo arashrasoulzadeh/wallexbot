@@ -1,12 +1,11 @@
 """Bot engine configuration."""
 
 from dataclasses import dataclass
-from typing import Optional
 
-from wallexbot.strategy.grid.interface import GridStrategy
-from wallexbot.sim.exchange import SimulatedExchange
-from wallexbot.wallex.price_feed import PriceFeed
 from wallexbot.domain import Clock
+from wallexbot.sim.exchange import SimulatedExchange
+from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.wallex.price_feed import PriceFeed
 
 
 @dataclass

@@ -1,13 +1,12 @@
 """Strategy plugin registry."""
 
-from typing import Optional
 from abc import ABC, abstractmethod
+
 from pydantic import BaseModel
 
-from wallexbot.strategy.grid.interface import GridStrategy, Action
-from wallexbot.strategy.grid.parameters import GridParameters
 from wallexbot.domain.market import Market
-from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.strategy.grid.parameters import GridParameters
 
 
 class StrategyPlugin(ABC):
@@ -45,11 +44,11 @@ class StrategyRegistry:
             return cls
         return decorator
 
-    def get(self, name: str) -> Optional[StrategyPlugin]:
+    def get(self, name: str) -> StrategyPlugin | None:
         """Get strategy plugin by name."""
         return self._strategies.get(name)
 
-    def get_params_model(self, name: str) -> Optional[type[BaseModel]]:
+    def get_params_model(self, name: str) -> type[BaseModel] | None:
         """Get params model for strategy."""
         plugin = self._strategies.get(name)
         if plugin:
@@ -60,7 +59,7 @@ class StrategyRegistry:
         """List registered strategy names."""
         return list(self._strategies.keys())
 
-    def create_strategy(self, name: str, market: Market, params: GridParameters) -> Optional[GridStrategy]:
+    def create_strategy(self, name: str, market: Market, params: GridParameters) -> GridStrategy | None:
         """Create strategy instance."""
         plugin = self._strategies.get(name)
         if plugin:

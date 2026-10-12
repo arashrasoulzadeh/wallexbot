@@ -1,20 +1,18 @@
 """FastAPI backend for web UI."""
 
 from contextlib import asynccontextmanager
-from typing import Optional
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Depends, Request
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ValidationError
 
-from wallexbot.storage.repository import Repository, InMemoryRepository
-from wallexbot.config.schema import validate_config, Config
-from wallexbot.domain.market import Symbol
+from wallexbot.config.schema import Config, validate_config
+from wallexbot.storage.repository import InMemoryRepository, Repository
 from wallexbot.wallex.client import WallexRestClient
-from wallexbot.wallex.models import Candle
 
 
 class EngineManager:
@@ -60,8 +58,8 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(
-    repo: Optional[Repository] = None,
-    engine_manager: Optional[EngineManager] = None,
+    repo: Repository | None = None,
+    engine_manager: EngineManager | None = None,
 ) -> FastAPI:
     """Create FastAPI application."""
 
@@ -218,7 +216,7 @@ def create_app(
         try:
             config = validate_config(request.config)
         except ValidationError as e:
-            raise HTTPException(422, detail=e.errors())
+            raise HTTPException(422, detail=e.errors()) from e
         run_id = await engine_manager.start_backtest(
             config,
             request.from_ts,
@@ -235,7 +233,7 @@ def create_app(
         try:
             config = validate_config(request.config)
         except ValidationError as e:
-            raise HTTPException(422, detail=e.errors())
+            raise HTTPException(422, detail=e.errors()) from e
         run_id = await engine_manager.start_paper_run(config)
         return {"id": run_id}
 

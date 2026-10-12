@@ -3,9 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
-from typing import Literal
 
-from wallexbot.domain.market import Market, Symbol
 from wallexbot.domain.money import quantize_down
 
 

@@ -1,12 +1,11 @@
 """Exchange protocol definition."""
 
 from typing import Protocol, runtime_checkable
-from decimal import Decimal
 
-from wallexbot.domain.market import Market, Symbol, Side, OrderType, OrderStatus
-from wallexbot.domain.order import OrderRequest, Order
 from wallexbot.domain.balance import Balance
-from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.domain.fees import FeeSchedule
+from wallexbot.domain.market import Market
+from wallexbot.domain.order import Order, OrderRequest
 
 
 @runtime_checkable

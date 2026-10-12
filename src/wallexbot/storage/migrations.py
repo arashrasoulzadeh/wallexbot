@@ -2,7 +2,6 @@
 
 import sqlite3
 
-
 MIGRATIONS = [
     """
     CREATE TABLE IF NOT EXISTS runs (

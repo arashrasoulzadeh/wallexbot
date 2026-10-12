@@ -1,16 +1,16 @@
 """Wallex WebSocket client for public channels."""
 
+import asyncio
+import json
+import time
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional, Callable, AsyncGenerator
-import json
-import asyncio
-import time
 
-from wallexbot.wallex.models import Depth, Trade, OrderBookLevel
+from wallexbot.domain import Clock
 from wallexbot.domain.market import Symbol
 from wallexbot.domain.money import parse_wire_string
-from wallexbot.domain import Clock
+from wallexbot.wallex.models import Depth, OrderBookLevel, Trade
 
 
 @dataclass
@@ -18,7 +18,7 @@ class WallexWebSocketClient:
     """Wallex public WebSocket client."""
 
     url: str = "wss://api.wallex.ir/ws"
-    connection_factory: Optional[Callable] = None
+    connection_factory: Callable | None = None
     clock: Clock = None
 
     def __post_init__(self) -> None:
@@ -62,7 +62,7 @@ class WallexWebSocketClient:
             frame = self.build_unsubscribe(channel)
             await self._connection.send(json.dumps(frame))
 
-    def parse_frame(self, frame: dict) -> Optional[Depth | Trade | dict]:
+    def parse_frame(self, frame: dict) -> Depth | Trade | dict | None:
         """Parse incoming WebSocket frame."""
         event = frame.get("event")
         channel = frame.get("channel", "")
@@ -128,7 +128,7 @@ class WallexWebSocketClient:
             prices[Symbol(symbol)] = parse_wire_string(price_str)
         return prices
 
-    async def handle_message(self, frame: dict) -> Optional[dict]:
+    async def handle_message(self, frame: dict) -> dict | None:
         """Handle incoming message, respond to pings."""
         if frame.get("event") == "ping":
             if self._connection:
@@ -174,7 +174,7 @@ class WallexWebSocketClient:
                     if message:
                         on_message(message)
 
-            except Exception as e:
+            except Exception:
                 # Log error and reconnect with backoff
                 await asyncio.sleep(5)  # Simple backoff
                 continue

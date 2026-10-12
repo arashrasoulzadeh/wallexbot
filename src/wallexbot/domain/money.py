@@ -1,6 +1,6 @@
 """Money math helpers using Decimal for precise financial calculations."""
 
-from decimal import Decimal, ROUND_DOWN, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 
 
 def quantize_down(value: Decimal, step: Decimal) -> Decimal:

@@ -9,8 +9,9 @@ from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, OrderStatus, OrderType, Side, Symbol
 from wallexbot.domain.order import Order, OrderRequest
-from wallexbot.sim.exchange import ExchangeProtocol, SimulatedExchange
+from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.sim.matching import FillModel, MatchingEngine
+from wallexbot.sim.protocol import ExchangeProtocol
 
 
 class TestExchangeProtocol:

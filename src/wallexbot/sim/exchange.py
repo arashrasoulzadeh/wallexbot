@@ -1,20 +1,17 @@
 """Simulated exchange for paper trading."""
 
+import time
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Optional
-import uuid
-import time
 
-from wallexbot.sim.protocol import ExchangeProtocol
-from wallexbot.sim.matching import MatchingEngine, FillModel
-from wallexbot.sim.rate_limiter import RateLimiter
-from wallexbot.domain.market import Market, Symbol, Side, OrderType, OrderStatus
-from wallexbot.domain.order import OrderRequest, Order, Fill
+from wallexbot.domain import Clock
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.domain.market import Market, OrderStatus, OrderType, Side
 from wallexbot.domain.money import quantize_down
-from wallexbot.domain import Clock
+from wallexbot.domain.order import Fill, Order, OrderRequest
+from wallexbot.sim.matching import FillModel, MatchingEngine
+from wallexbot.sim.rate_limiter import RateLimiter
 
 
 class _RealClock:
