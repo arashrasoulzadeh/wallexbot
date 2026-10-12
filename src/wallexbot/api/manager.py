@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 from wallexbot.analytics.backtest import Backtester, BacktestResult
+from wallexbot.analytics.market_status import build_market_status, jsonable
 from wallexbot.analytics.replay import candles_to_ticks
 from wallexbot.config.schema import Config
 from wallexbot.engine import BotEngine, EngineConfig, EngineState
@@ -123,6 +124,38 @@ class RunManager:
         if not trades:
             return None
         return {"symbol": symbol, "price": str(trades[0].price), "timestamp": trades[0].timestamp}
+
+    async def market_status(self, config: Config) -> dict[str, Any]:
+        """Neutral market facts for the configured grid (public data only)."""
+        return await asyncio.to_thread(self._market_status_sync, config)
+
+    def _market_status_sync(self, config: Config) -> dict[str, Any]:
+        client = self._client_factory()
+        symbol = str(config.market.symbol)
+        info = find_market(client, symbol)
+        if info is None:
+            raise ValueError(f"market {symbol} not found (is it a spot market?)")
+        setup = GridSetup.from_config(config, info)
+        trades = client.get_latest_trades(symbol, 1)
+        if not trades:
+            raise ValueError("no recent trades on this market")
+        now_ms = int(time.time() * 1000)
+        candles = client.get_candles(symbol, "1", now_ms // 1000 - 86400, now_ms // 1000)
+        depth = client.get_depth(symbol)
+        result: dict[str, Any] = jsonable(
+            build_market_status(
+                symbol=symbol,
+                price=trades[0].price,
+                trade_ts=trades[0].timestamp,
+                candles=candles,
+                depth=depth,
+                params=setup.params,
+                price_precision=setup.market.price_precision,
+                maker_fee=setup.maker,
+                now_ms=now_ms,
+            )
+        )
+        return result
 
     def recoverable(self) -> list[dict[str, Any]]:
         """Interrupted runs found in the repository that can be recovered."""

@@ -27,6 +27,7 @@ PAGES = {
     "/paper": "paper.title",
     "/runs": "runs.title",
     "/history": "hist.title",
+    "/market": "mk.title",
     "/settings": "na.title",
 }
 
@@ -105,7 +106,23 @@ def test_every_translation_key_used_by_the_pages_exists(i18n):
         for s in ("idle", "running", "paused", "stopped", "halted", "failed", "done", "unknown")
     }
     used |= {f"side.{s}" for s in ("BUY", "SELL")}
-    used |= {f"nav.{p}" for p in ("dashboard", "configure", "backtest", "paper", "history", "runs")}
+    used |= {f"mk.state.{s}" for s in ("inside", "below", "above")}
+    used |= {f"mk.trend.{s}" for s in ("sideways", "up", "down", "unclear")}
+    used |= {f"mk.dir.{s}" for s in ("up", "down")}
+    used |= {"mk.w.outside_range.above", "mk.w.outside_range.below"}
+    used |= {
+        f"mk.w.{c}"
+        for c in (
+            "moves_smaller_than_spacing",
+            "range_wider_than_grid",
+            "strong_trend",
+            "stale_price",
+        )
+    }
+    used |= {
+        f"nav.{p}"
+        for p in ("dashboard", "configure", "backtest", "paper", "market", "history", "runs")
+    }
     missing = sorted(k for k in used if k not in i18n["en"])
     assert not missing, f"keys used but not translated: {missing}"
 
@@ -141,3 +158,16 @@ def test_the_default_config_matches_the_example_file():
             assert str(defaults[section].get(key)) == str(value), (section, key)
     assert defaults["strategy"]["grid"]["lower_price"] == example["strategy"]["grid"]["lower_price"]
     assert defaults["strategy"]["grid"]["grid_count"] == example["strategy"]["grid"]["grid_count"]
+
+
+def test_the_market_page_states_that_it_is_not_advice_and_has_no_buy_sell_verdict(client, i18n):
+    html = client.get("/market").text
+    assert 'data-i18n="mk.disclaimer"' in html
+    en = i18n["en"]
+    assert (
+        "not investment advice" in en["mk.disclaimer"].lower()
+        and "does not tell you to buy or sell" in en["mk.disclaimer"].lower()
+    )
+    for key, text in en.items():
+        if key.startswith("mk."):
+            assert "buy now" not in text.lower() and "sell now" not in text.lower(), key

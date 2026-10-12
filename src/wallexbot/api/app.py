@@ -159,6 +159,23 @@ def create_app(
             raise HTTPException(404, "no recent trades")
         return result
 
+    class MarketStatusRequest(BaseModel):
+        config: dict[str, Any]
+
+    @app.post("/api/market-status")
+    async def market_status(request: MarketStatusRequest) -> Any:
+        """Neutral facts about the price, the grid and the order book. Not advice."""
+        try:
+            config = validate_config(request.config)
+        except ValidationError as e:
+            raise HTTPException(422, detail=_validation_errors(e)) from e
+        try:
+            return await manager.market_status(config)
+        except ValueError as e:
+            raise HTTPException(422, detail=str(e)) from e
+        except (WallexApiError, httpx.HTTPError, OSError) as e:
+            raise HTTPException(502, str(e)) from e
+
     # Runs --------------------------------------------------------------------------
 
     @app.get("/api/runs")
@@ -571,6 +588,7 @@ def create_app(
     page("/paper", "paper.html", "paper")
     page("/runs", "runs.html", "runs")
     page("/history", "history.html", "history")
+    page("/market", "market.html", "market")
     page("/settings", "unavailable.html", "settings")
 
     return app

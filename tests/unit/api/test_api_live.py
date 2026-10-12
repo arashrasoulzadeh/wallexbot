@@ -292,3 +292,59 @@ def test_a_failing_public_api_is_a_502_with_the_reason():
     with TestClient(create_app(repo=InMemoryRepository(), engine_manager=manager)) as c:
         r = c.get("/api/price/USDTTMN")
         assert r.status_code == 502 and "503" in r.json()["detail"]
+
+
+# --- the Market status page: facts, never a buy/sell verdict -----------------------------------
+
+import json  # noqa: E402
+
+
+def test_market_status_describes_the_price_the_grid_and_the_book(client):
+    r = client.post("/api/market-status", json={"config": config_dict()})
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert body["symbol"] == "USDTTMN" and body["price"] == "262154"
+    grid = body["grid"]
+    assert grid["state"] == "inside" and grid["levels"] == 6 and grid["lower"] == "261000"
+    assert grid["next_buy"]["price"] == "261000" and grid["next_sell"]["price"] == "262200"
+    assert body["depth"]["best_bid"] == "262100" and body["depth"]["best_ask"] == "262200"
+    assert body["depth"]["bid_share_pct"] is not None
+    assert body["trend"]["label"] in ("sideways", "up", "down", "unclear")
+    assert {w["code"] for w in body["warnings"]} >= {"stale_price"}  # the fake trade is years old
+
+
+def test_market_status_never_contains_a_recommendation(client):
+    text = json.dumps(
+        client.post("/api/market-status", json={"config": config_dict()}).json()
+    ).lower()
+    for word in ("recommend", "signal", "should_buy", "should_sell", "advice"):
+        assert word not in text
+
+
+def test_market_status_needs_a_valid_config_and_a_known_market(client):
+    bad = config_dict()
+    bad["strategy"]["grid"]["grid_count"] = 60
+    bad["strategy"]["grid"]["total_investment"] = "9000000"
+    assert client.post("/api/market-status", json={"config": bad}).status_code == 422
+    unknown = config_dict()
+    unknown["market"]["symbol"] = "NOPEUSDT"
+    r = client.post("/api/market-status", json={"config": unknown})
+    assert r.status_code == 422 and "NOPEUSDT" in str(r.json())
+
+
+def test_market_status_reports_an_unreachable_wallex_as_502():
+    from wallexbot.storage.repository import InMemoryRepository
+    from wallexbot.wallex.client import WallexApiError
+
+    class Down(FakeClient):
+        def get_depth(self, symbol):
+            raise WallexApiError("HTTP 503 for /v1/depth")
+
+    repo = InMemoryRepository()
+    manager = RunManager(
+        repo, client_factory=lambda: Down(), feed_factory=lambda k, s, c: HoldingFeed([])
+    )
+    with TestClient(create_app(repo=repo, engine_manager=manager)) as c:
+        r = c.post("/api/market-status", json={"config": config_dict()})
+        assert r.status_code == 502 and "503" in r.json()["detail"]

@@ -5,7 +5,7 @@ from decimal import Decimal as D
 from pathlib import Path
 
 from wallexbot.domain.market import Symbol
-from wallexbot.wallex.models import Candle, Market, Trade
+from wallexbot.wallex.models import Candle, Depth, Market, OrderBookLevel, Trade
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "wallex"
 
@@ -33,6 +33,19 @@ class FakeClient:
         self.candles = candles if candles is not None else swinging_candles()
         self.requests: list[tuple[str, str, int, int]] = []
         self.trade_requests: list[str] = []
+        self.depth_requests: list[str] = []
+        self.depth = Depth(
+            symbol=Symbol("USDTTMN"),
+            timestamp=1_700_000_123_000,
+            bids=[
+                OrderBookLevel(price=D("262100"), quantity=D("300")),
+                OrderBookLevel(price=D("262050"), quantity=D("100")),
+            ],
+            asks=[
+                OrderBookLevel(price=D("262200"), quantity=D("100")),
+                OrderBookLevel(price=D("262250"), quantity=D("100")),
+            ],
+        )
         self.trades: list[Trade] = [
             Trade(
                 symbol=Symbol("USDTTMN"),
@@ -45,6 +58,10 @@ class FakeClient:
 
     def get_markets(self) -> list[Market]:
         return self.markets
+
+    def get_depth(self, symbol: str) -> Depth:
+        self.depth_requests.append(symbol)
+        return self.depth
 
     def get_latest_trades(self, symbol: str, limit: int = 50) -> list[Trade]:
         self.trade_requests.append(symbol)

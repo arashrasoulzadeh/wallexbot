@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 data-i18n="mk.title">Market status</h1>
+<p class="lead" data-i18n="mk.intro"></p>
+<div class="disclaimer" data-i18n="mk.disclaimer"></div>
+<div id="message"></div>
+
+<div id="content" style="display:none">
+    <div class="stats" id="top"></div>
+
+    <div class="grid">
+        <div class="card">
+            <h2 data-i18n="mk.position">Where the price is in your grid</h2>
+            <div id="state"></div>
+            <div class="bar" id="bar"></div>
+            <p class="muted" id="position-text"></p>
+            <h2 data-i18n="mk.nextOrders">What your grid would do next</h2>
+            <ul class="events" id="next" style="max-height:none"></ul>
+            <p class="muted" data-i18n="mk.nextNote"></p>
+        </div>
+        <div class="card">
+            <h2 data-i18n="mk.moves">Recent movement</h2>
+            <table id="moves"></table>
+            <h2 style="margin-top:1rem" data-i18n="mk.trend">How the price travelled in 24 hours</h2>
+            <p id="trend"></p>
+            <p class="muted" id="trend-eff"></p>
+            <p class="muted" data-i18n="mk.trendNote"></p>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card"><h2 data-i18n="mk.book">Order book</h2><table id="book"></table></div>
+        <div class="card"><h2 data-i18n="mk.warnings">Conditions worth knowing</h2><ul class="warn-list" id="warnings"></ul><p id="no-warnings" class="muted" style="display:none" data-i18n="mk.noWarnings"></p></div>
+    </div>
+
+    <p class="muted"><span data-i18n="mk.updates"></span> · <span id="grid-used"></span></p>
+</div>
+
+<script>
+wb.ready.then(async function () {
+    const $ = function (id) { return document.getElementById(id); };
+    let config = await wb.config.current();
+    let data = null;
+
+    function say(kind, text) {
+        const box = wb.clear($('message'));
+        if (text) { box.appendChild(wb.el('div', { class: kind, text: text })); }
+    }
+
+    function stat(label, value, cls) {
+        return wb.el('div', { class: 'stat' }, wb.el('div', { class: 'label', text: wb.t(label) }),
+            wb.el('div', { class: 'value ' + (cls || ''), text: value }));
+    }
+
+    function pct(v, digits) { return v === null || v === undefined ? wb.t('mk.na') : wb.pct(v, digits === undefined ? 2 : digits); }
+
+    function row(label, value, cls) {
+        return wb.el('tr', {}, wb.el('td', { text: wb.t(label) }), wb.el('td', { class: cls || '', text: value }));
+    }
+
+    /* a number or word from a warning's parameters, formatted for reading */
+    function param(name, value) {
+        if (name === 'side') { return wb.t('mk.state.' + value); }
+        if (name === 'direction') { return wb.t('mk.dir.' + value); }
+        if (name === 'minutes') { return String(Math.round(Number(value))); }
+        if (name.slice(-4) === '_pct') { return wb.num(value, 3); }
+        if (name === 'efficiency') { return wb.num(value, 2); }
+        return wb.num(value, 4);
+    }
+
+    function warningText(w) {
+        const key = w.code === 'outside_range' ? 'mk.w.outside_range.' + w.params.side : 'mk.w.' + w.code;
+        const vars = {};
+        Object.keys(w.params).forEach(function (k) { vars[k] = param(k, w.params[k]); });
+        return wb.t(key, vars);
+    }
+
+    function bar(grid) {
+        const box = wb.clear($('bar'));
+        const lo = Number(grid.lower), hi = Number(grid.upper), span = hi - lo || 1;
+        box.appendChild(wb.el('div', { class: 'track' }));
+        grid.level_prices.forEach(function (p, i) {
+            const left = (Number(p) - lo) / span * 100;
+            const last = i === grid.level_prices.length - 1;
+            box.appendChild(wb.el('div', { class: 'tick', style: 'left:' + left + '%' },
+                wb.el('span', { text: wb.num(p, 0) })));
+        });
+        const at = Math.min(Math.max((Number(data.price) - lo) / span * 100, 0), 100);
+        box.appendChild(wb.el('div', { class: 'here-label', style: 'left:' + at + '%', text: wb.num(data.price, 0) }));
+        box.appendChild(wb.el('div', { class: 'here', style: 'left:' + at + '%' }));
+    }
+
+    function render() {
+        if (!data) { return; }
+        const g = data.grid, c = data.changes, d = data.depth;
+        $('content').style.display = '';
+
+        const top = wb.clear($('top'));
+        [stat('mk.price', wb.num(data.price, 4)),
+         stat('mk.asOf', wb.time(data.as_of_ms)),
+         stat('mk.h1', pct(c.h1_pct), wb.signClass(c.h1_pct)),
+         stat('mk.h24', pct(c.h24_pct), wb.signClass(c.h24_pct))
+        ].forEach(function (n) { top.appendChild(n); });
+
+        wb.clear($('state')).appendChild(wb.el('p', {}, wb.el('strong', { text: wb.t('mk.state.' + g.state) })));
+        bar(g);
+        $('position-text').textContent = wb.t('mk.positionPct', { pct: wb.num(g.position_pct, 1) });
+
+        const next = wb.clear($('next'));
+        next.appendChild(wb.el('li', { text: g.next_buy
+            ? wb.t('mk.nextBuy', { price: wb.num(g.next_buy.price, 4), distance: wb.num(g.next_buy.distance, 4), pct: wb.num(g.next_buy.distance_pct, 3) })
+            : wb.t('mk.noBuy') }));
+        next.appendChild(wb.el('li', { text: g.next_sell
+            ? wb.t('mk.nextSell', { price: wb.num(g.next_sell.price, 4), distance: wb.num(g.next_sell.distance, 4), pct: wb.num(g.next_sell.distance_pct, 3) })
+            : wb.t('mk.noSell') }));
+
+        const moves = wb.clear($('moves'));
+        [row('mk.h1', pct(c.h1_pct, 3), wb.signClass(c.h1_pct)), row('mk.h24', pct(c.h24_pct, 3), wb.signClass(c.h24_pct)),
+         row('mk.high24', wb.num(c.high_24h, 4)), row('mk.low24', wb.num(c.low_24h, 4)),
+         row('mk.range1h', c.range_1h_pct === null ? wb.t('mk.na') : wb.num(c.range_1h_pct, 3) + '%'),
+         row('mk.range24', c.range_24h_pct === null ? wb.t('mk.na') : wb.num(c.range_24h_pct, 3) + '%')
+        ].forEach(function (r) { moves.appendChild(r); });
+
+        $('trend').textContent = wb.t('mk.trend.' + data.trend.label);
+        $('trend-eff').textContent = data.trend.label === 'unclear' ? '' : wb.t('mk.efficiency', { value: wb.num(data.trend.efficiency, 2) });
+
+        const book = wb.clear($('book'));
+        if (d) {
+            [row('mk.bid', wb.num(d.best_bid, 4)), row('mk.ask', wb.num(d.best_ask, 4)),
+             row('mk.spread', d.spread === null ? wb.t('mk.na') : wb.num(d.spread, 4) + (d.spread_pct === null ? '' : ' (' + wb.num(d.spread_pct, 3) + '%)')),
+             row('mk.bidShare', d.bid_share_pct === null ? wb.t('mk.na') : wb.num(d.bid_share_pct, 1) + '%')
+            ].forEach(function (r) { book.appendChild(r); });
+        }
+
+        const list = wb.clear($('warnings'));
+        data.warnings.forEach(function (w) { list.appendChild(wb.el('li', { text: warningText(w) })); });
+        $('no-warnings').style.display = data.warnings.length ? 'none' : '';
+
+        $('grid-used').textContent = wb.t('mk.grid') + ': ' + data.symbol + ' ' + wb.num(g.lower, 0) + ' - ' + wb.num(g.upper, 0) + ', ' + g.levels;
+    }
+
+    async function load() {
+        try {
+            data = await wb.post('/api/market-status', { config: config });
+            say('', '');
+            render();
+        } catch (e) { say('error', wb.t('mk.error') + ': ' + e.message); }
+    }
+
+    document.addEventListener('wb:lang', render);
+    await load();
+    setInterval(load, 15000);
+});
+</script>
+{% endblock %}
