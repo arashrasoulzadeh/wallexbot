@@ -34,6 +34,8 @@ The project is **a broad but unreliable first draft, not a finished Phases 1-17*
 
 ## P1: configuration does not match the decisions
 
+**Status 2026-10-12: FIXED** (tests in `tests/unit/config/test_breakeven.py`): example config now targets USDTTMN with Toman prices, 2M TMN, placeholder fees/min-notional clearly marked; config validation rejects grids below the fee break-even (1.5x round-trip maker fee) or with per-level size below `min_notional`; "profit per cycle after fees" formula corrected. Still open: the `json` field-name warning in `LoggingConfig`.
+
 - `config/grid.example.yaml` uses **lower 90 / upper 110** for USDTTMN, whose price is about 264,000 TMN. `min_notional` is `10.00` (should be around 90,000 TMN placeholder, D11/D17); fees `0.001/0.002` are placeholders with no source (D16).
 - **Fee break-even check is not enforced in config validation** (plan 4.3 / D16). It exists only as advisory text in `intelligence/smart_grid.py`. A grid whose spacing is below twice the maker fee is accepted.
 - Risk defaults in the example (`max_drawdown 0.05`, `daily_loss_limit 0.02`) match D12; capital 2,000,000 TMN matches D8.

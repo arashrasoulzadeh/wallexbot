@@ -17,16 +17,16 @@ market:
 strategy:
   grid:
     # Grid lower bound (inclusive) - price at which lowest buy order placed
-    lower_price: "90.00"
+    lower_price: "261000"
     # Grid upper bound (inclusive) - price at which highest sell order placed
-    upper_price: "110.00"
+    upper_price: "267000"
     # Number of grid levels (minimum 2)
     # More levels = smaller spacing = more trades but less profit per trade
-    grid_count: 20
+    grid_count: 6
     # Grid spacing mode: "arithmetic" (equal price steps) or "geometric" (equal ratio steps)
     mode: "arithmetic"
     # Total quote currency to invest (TMN for USDTTMN)
-    total_investment: "2000000.00"
+    total_investment: "2000000"
     # Optional: fixed base quantity per grid level (alternative to total_investment)
     # per_grid_qty: "10.0000"
     # Optional: stop loss price (below lower_price)
@@ -38,9 +38,9 @@ risk:
   # Maximum concurrent open orders (Wallex limit: 20 req/10s)
   max_open_orders: 20
   # Maximum quote currency exposure (TMN)
-  max_exposure_quote: "2000000.00"
+  max_exposure_quote: "2000000"
   # Maximum base currency exposure (USDT)
-  max_exposure_base: "20000.00"
+  max_exposure_base: "20"
   # Maximum drawdown from peak equity (0.05 = 5%)
   max_drawdown: "0.05"
   # Maximum daily loss limit (0.02 = 2%)
@@ -49,17 +49,20 @@ risk:
 simulation:
   # Initial quote balance for paper trading (TMN)
   # Default: 2,000,000 TMN per decision D8
-  initial_balance_quote: "2000000.00"
+  initial_balance_quote: "2000000"
   # Initial base balance for paper trading (USDT)
   initial_balance_base: "0.00"
   # Maker fee rate (0.001 = 0.1%)
-  fee_maker: "0.001"
+  # PLACEHOLDER fees: the real Wallex rate is only visible with an API key (TODO D16).
+  # Set your actual maker/taker tier; the config check rejects grids that cannot beat the fee.
+  fee_maker: "0.0005"
   # Taker fee rate (0.002 = 0.2%)
-  fee_taker: "0.002"
+  fee_taker: "0.001"
   # Minimum notional value per order (TMN)
-  min_notional: "10.00"
+  # PLACEHOLDER: Wallex does not publish the spot minimum; 90000 TMN is the OTC minimum (TODO D17).
+  min_notional: "90000"
   # Minimum quantity per order (USDT)
-  min_quantity: "0.0001"
+  min_quantity: "0.01"
   # Fill model: "conservative" (needs trade through price) or "touch" (price touch)
   # Default: "conservative" per decision D4
   fill_model: "conservative"

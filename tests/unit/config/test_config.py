@@ -161,8 +161,8 @@ logging:
         # This test would need market info - skip for now
         pass
 
-    def test_profit_per_grid_below_fees_warns(self):
-        """Profit per grid below 2x fees warns or rejects."""
+    def test_profit_per_grid_below_fees_is_rejected(self):
+        """Spacing below the round-trip fee break-even is rejected (decision D16)."""
         yaml_str = """
 exchange:
   name: "wallex"
@@ -187,11 +187,9 @@ logging:
   level: "INFO"
 """
         config = yaml.safe_load(yaml_str)
-        # Very tight range, many grids - profit per grid tiny
-        # Should warn or reject based on config
-        validated = validate_config(config)
-        # For now, just ensure it loads (warning would be in derived values)
-        assert validated is not None
+        # Very tight range, many grids: spacing 0.001% against a 0.2% round-trip fee
+        with pytest.raises(ValueError, match="break-even"):
+            validate_config(config)
 
     def test_api_key_in_config_rejected(self):
         """Config containing api_key/secret is rejected."""

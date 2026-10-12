@@ -1,6 +1,7 @@
 """Configuration schema using Pydantic v2."""
 
 from decimal import Decimal
+from typing import ClassVar
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,8 @@ class GridStrategyConfig(BaseModel):
     levels_count: int | None = Field(default=None, exclude=True)
     per_grid_investment: Decimal | None = Field(default=None, exclude=True)
     min_profit_per_cycle_after_fees: Decimal | None = Field(default=None, exclude=True)
+    round_trip_fee_rate: Decimal | None = Field(default=None, exclude=True)
+    spacing_pct: Decimal | None = Field(default=None, exclude=True)
 
     @field_validator("lower_price", "upper_price", "total_investment", "per_grid_qty", "stop_loss_price", "take_profit_price", mode="before")
     @classmethod
@@ -106,11 +109,12 @@ class GridStrategyConfig(BaseModel):
         self.levels_count = count
         self.per_grid_investment = Decimal(self.total_investment) / count
 
-        # Min profit per cycle after fees (round trip)
-        # Buy fee + sell fee (both sides)
-        round_trip_fee_rate = fee_maker + fee_taker  # Simplified
-        # Min price move needed to cover fees
-        self.min_profit_per_cycle_after_fees = self.spacing * (Decimal("1") - round_trip_fee_rate * 2)
+        # Round-trip cost: a maker fee on the buy and on the sell, both charged on price.
+        # Net profit per cycle (per unit of base) = spacing - mid_price * 2 * maker_fee.
+        mid_price = (lower + upper) / 2
+        self.round_trip_fee_rate = 2 * fee_maker
+        self.min_profit_per_cycle_after_fees = self.spacing - mid_price * self.round_trip_fee_rate
+        self.spacing_pct = self.spacing / mid_price
 
 
 class RiskConfig(BaseModel):
@@ -184,11 +188,35 @@ class Config(BaseModel):
         # Get grid config
         grid_config = self.strategy.get("grid")
         if grid_config:
+            maker = Decimal(self.simulation.fee_maker)
             grid_config.compute_derived(
-                fee_maker=Decimal(self.simulation.fee_maker),
+                fee_maker=maker,
                 fee_taker=Decimal(self.simulation.fee_taker),
             )
+            self._check_grid_is_tradable(grid_config, maker)
         return self
+
+    # Spacing must beat the round-trip fee by this factor (safety margin for slippage, rounding).
+    BREAKEVEN_MARGIN: ClassVar[Decimal] = Decimal("1.5")
+
+    def _check_grid_is_tradable(self, grid: "GridStrategyConfig", maker: Decimal) -> None:
+        """Reject grids that cannot profit after fees or whose orders are too small (D11, D16)."""
+        assert grid.spacing_pct is not None and grid.round_trip_fee_rate is not None
+        required = grid.round_trip_fee_rate * self.BREAKEVEN_MARGIN
+        if grid.spacing_pct < required:
+            raise ValueError(
+                f"grid spacing {grid.spacing_pct:.4%} is below break-even "
+                f"{required:.4%} (round-trip maker fee {grid.round_trip_fee_rate:.4%} "
+                f"x {self.BREAKEVEN_MARGIN} margin): use fewer levels, a wider range, or check fee_maker"
+            )
+        if grid.per_grid_qty is None:
+            min_notional = Decimal(self.simulation.min_notional)
+            per_level = Decimal(grid.total_investment) / grid.grid_count
+            if per_level < min_notional:
+                raise ValueError(
+                    f"investment per level {per_level:.2f} is below min_notional "
+                    f"{min_notional}: use fewer levels or more capital"
+                )
 
 
 def validate_config(data: dict, env_overrides: bool = False) -> Config:
