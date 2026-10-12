@@ -92,3 +92,21 @@ finished).
 
 `wallexbot paper --resume --db runs.db` continues a run that a crash interrupted, from its last
 checkpoint, replaying the downtime's public prices first. Details and limits: [runbook.md](runbook.md).
+
+## History
+
+Every recorded run (CLI with `--db`, or `wallexbot ui`) keeps a time series of price and equity (one
+point at the first price, on every fill, and at most every 30 s otherwise) next to its trades and events.
+The **History** page and `GET /api/history/runs[/{id}]` turn that into:
+
+- headline numbers (return, price change if you had just held, realized PnL, fees, cycles, fills,
+  max drawdown, traded volume, duration);
+- an equity curve and a price chart with a marker for every buy and sell;
+- a day-by-day table (days end at midnight **Tehran time**, UTC+03:30; `?tz=` changes the zone);
+- the trades (filter by side) and the event log;
+- CSV downloads of the trades and of the price/equity history.
+
+A time range (last hour / 24 h / 7 d / whole run) limits all of it at once. For a range, the summary
+counts only what happened inside it, measured from the last snapshot before it; for the whole run it
+starts from the initial equity, so the entry fee is included and the return matches the engine's own.
+Charts are thinned to at most 600 points (`max_points`), the numbers use every point.

@@ -88,14 +88,20 @@ class TradingSession:
         self._flush_deferred()
 
         inside = self._in_range(price)
-        if not inside and not self._out_of_range:
+        already_out = self._out_of_range
+        if not inside and not already_out:
             params = self.strategy.params
             self._event(
                 f"price {price} left the grid range [{params.lower_price}, {params.upper_price}]"
             )
         self._out_of_range = not inside
 
-        self.execute(self.strategy.on_price(price, timestamp))
+        actions = self.strategy.on_price(price, timestamp)
+        if already_out:
+            # the strategy repeats its pause/warning on every price while out of range; it was
+            # announced when the price left, so do not flood the event log with copies
+            actions = [a for a in actions if not isinstance(a, (PauseAction, AlertAction))]
+        self.execute(actions)
         fills = self.exchange.process_trade(price, UNLIMITED_VOLUME, timestamp)
         self._on_fills(fills)
         return fills

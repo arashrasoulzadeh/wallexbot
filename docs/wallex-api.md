@@ -53,6 +53,12 @@ Use `amount_precision` / `price_precision` to round orders. Min order size is no
 `result.latestTrades[]`: `{symbol, quantity, price, sum, isBuyOrder, timestamp}`.
 
 ### GET `/v1/udf/history` (candles / OHLC, TradingView UDF style)
+
+**Observed behaviour differs from the documented resolutions (checked 2026-10-12 against the live API):**
+`resolution=15` returns **1-minute** bars, `240` returns **hourly** bars, `60` hourly and `1D` daily bars are as
+asked, and `1` returns 1-minute bars for windows up to about a day but `no_data` for a 3-day window. Do not rely on
+the resolution number meaning minutes; check the spacing of `t` in the response.
+
 Query: `symbol` (e.g. `BTCUSDT`), `resolution` (`1,15,60,240,480,720,1D,2D,3D`), `from`, `to` (unix seconds).
 Response (parallel arrays): `{ s, t[], o[], h[], l[], c[], v[] }`.
 

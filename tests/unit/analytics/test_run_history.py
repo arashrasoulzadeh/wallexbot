@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal as D
 
 from wallexbot.analytics.run_history import (
+    Point,
     daily_breakdown,
     downsample,
     fills_csv,
@@ -153,7 +154,14 @@ def test_the_summary_collects_the_headline_numbers():
     assert (
         s["first_price"] == D(100) and s["last_price"] == D(102) and s["price_change_pct"] == D(2)
     )
-    assert s["duration_ms"] == 2_200_000 and s["status"] == "stopped" and s["market"] == "USDTTMN"
+    assert s["duration_ms"] == 2_000_000 and s["status"] == "stopped" and s["market"] == "USDTTMN"
+
+
+def test_a_replayed_run_lasts_as_long_as_its_data_not_as_long_as_the_replay_took():
+    points = parse_snapshots([row(1_000_000_000, 100), row(1_000_000_000 + 3 * 86_400_000, 101)])
+    run = {"id": "r", "status": "stopped", "market": "X", "started_at": 5_000, "stopped_at": 9_000}
+    s = run_summary(run, points, [])
+    assert s["duration_ms"] == 3 * 86_400_000 and s["ended_at"] == 1_000_000_000 + 3 * 86_400_000
 
 
 def test_the_summary_of_a_run_with_no_history_is_zeros_not_an_error():
@@ -183,3 +191,52 @@ def test_csv_export_has_a_header_and_escapes_awkward_values():
         "timestamp_ms",
         "price",
     ]
+
+
+START = Point(
+    ts=0, price=D(100), equity=D(1000), realized=D(0), fees=D(0), open_orders=0, fills=0, cycles=0
+)
+
+
+def test_a_start_point_makes_the_summary_count_the_entry_fee_and_everything_after_it():
+    # the first snapshot (equity 998, fees 2) is already AFTER the entry fee was paid
+    points = parse_snapshots(
+        [row(1000, 998, realized=0, fees=2), row(2000, 1010, realized=15, fees=7, cycles=2)]
+    )
+    run = {"id": "r", "status": "stopped", "market": "X", "started_at": 0}
+
+    s = run_summary(run, points, [], start=START)
+
+    assert s["return_pct"] == D(1)  # 1000 -> 1010, not 998 -> 1010
+    assert s["fees"] == D(7) and s["realized"] == D(15) and s["cycles"] == 2
+
+
+def test_a_range_summary_counts_only_what_happened_inside_the_range():
+    before = Point(
+        ts=500,
+        price=D(100),
+        equity=D(1000),
+        realized=D(10),
+        fees=D(4),
+        open_orders=0,
+        fills=3,
+        cycles=1,
+    )
+    points = parse_snapshots([row(1000, 1020, price="102", realized=30, fees=9, cycles=3)])
+    s = run_summary(
+        {"id": "r", "status": "x", "market": "X", "started_at": 0}, points, [], start=before
+    )
+    assert s["realized"] == D(20) and s["fees"] == D(5) and s["cycles"] == 2
+    assert s["return_pct"] == D(2) and s["price_change_pct"] == D(2)
+
+
+def test_the_first_day_is_measured_from_the_start_point_too():
+    points = parse_snapshots(
+        [
+            row(ms("2026-10-10T10:00:00"), 998, realized=0, fees=2),
+            row(ms("2026-10-10T15:00:00"), 1010, realized=8, fees=6, cycles=1),
+        ]
+    )
+    [day] = daily_breakdown(points, [], "UTC", start=START)
+    assert day["equity_change"] == D(10)  # 1000 -> 1010: includes the entry fee
+    assert day["fees"] == D(6) and day["realized_change"] == D(8) and day["cycles"] == 1

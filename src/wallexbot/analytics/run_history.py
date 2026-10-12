@@ -105,11 +105,15 @@ def _volume(fill: dict[str, Any]) -> Decimal:
 
 
 def daily_breakdown(
-    points: list[Point], fills: list[dict[str, Any]], tz: str = DEFAULT_TZ
+    points: list[Point],
+    fills: list[dict[str, Any]],
+    tz: str = DEFAULT_TZ,
+    start: Point | None = None,
 ) -> list[dict[str, Any]]:
     """One row per local day: equity/realized/fee/cycle change and trading activity.
 
-    Each day is measured from where the previous day ended; the first day from the run's first
+    Each day is measured from where the previous day ended; the first day from `start` (the
+    run's starting state, or the last snapshot before the range) or, without one, from the first
     snapshot.
     """
     by_day: dict[str, list[Point]] = {}
@@ -120,19 +124,19 @@ def daily_breakdown(
         fills_by_day.setdefault(local_day(int(f["timestamp"]), tz), []).append(f)
 
     rows = []
-    previous_end: Point | None = None
+    previous_end: Point | None = start
     for day in sorted(set(by_day) | set(fills_by_day)):
         day_points = by_day.get(day, [])
         day_fills = fills_by_day.get(day, [])
         if day_points:
-            start = previous_end or day_points[0]
+            begin = previous_end or day_points[0]
             end = day_points[-1]
             previous_end = end
             changes = {
-                "equity_change": end.equity - start.equity,
-                "realized_change": end.realized - start.realized,
-                "fees": end.fees - start.fees,
-                "cycles": end.cycles - start.cycles,
+                "equity_change": end.equity - begin.equity,
+                "realized_change": end.realized - begin.realized,
+                "fees": end.fees - begin.fees,
+                "cycles": end.cycles - begin.cycles,
                 "equity_end": end.equity,
             }
         else:
@@ -157,36 +161,54 @@ def daily_breakdown(
 
 
 def run_summary(
-    run: dict[str, Any], points: list[Point], fills: list[dict[str, Any]]
+    run: dict[str, Any],
+    points: list[Point],
+    fills: list[dict[str, Any]],
+    start: Point | None = None,
 ) -> dict[str, Any]:
-    """Headline numbers of one run, from whatever history was recorded."""
+    """Headline numbers of one run, from whatever history was recorded.
+
+    `start` is the state the figures are measured from: the run's starting state (initial equity,
+    zero totals) for a whole run, or the last snapshot before a time range. Without one, the
+    first snapshot is the reference and running totals are reported as they are.
+    """
     first = points[0] if points else None
     last = points[-1] if points else None
     zero = Decimal(0)
+    base = start or first
     return_pct = (
-        (last.equity - first.equity) / first.equity * 100
-        if first and last and first.equity > 0
+        (last.equity - base.equity) / base.equity * 100
+        if base and last and base.equity > 0
         else zero
+    )
+    base_price = (start.price if start and start.price else None) or (
+        first.price if first else None
     )
     price_change = (
-        (last.price - first.price) / first.price * 100
-        if first and last and first.price and last.price
-        else zero
+        (last.price - base_price) / base_price * 100 if last and last.price and base_price else zero
     )
+    off_realized = start.realized if start else zero
+    off_fees = start.fees if start else zero
+    off_cycles = start.cycles if start else 0
     started = int(run.get("started_at") or 0)
-    ended = int(run.get("stopped_at") or 0) or (last.ts if last else started)
+    # The recorded history is the best clock: a replayed run spans the data's days, not the few
+    # seconds the replay took.
+    if first and last:
+        began, ended = first.ts, last.ts
+    else:
+        began, ended = started, int(run.get("stopped_at") or 0) or started
     return {
         "id": run["id"],
         "status": run.get("status", "unknown"),
         "market": run.get("market", ""),
         "started_at": started,
         "ended_at": ended,
-        "duration_ms": max(ended - started, 0),
+        "duration_ms": max(ended - began, 0),
         "return_pct": return_pct,
         "max_drawdown_pct": max_drawdown_pct(points),
-        "realized": last.realized if last else zero,
-        "fees": last.fees if last else zero,
-        "cycles": last.cycles if last else 0,
+        "realized": last.realized - off_realized if last else zero,
+        "fees": last.fees - off_fees if last else zero,
+        "cycles": last.cycles - off_cycles if last else 0,
         "fills": len(fills),
         "buys": sum(1 for f in fills if f.get("side") == "BUY"),
         "sells": sum(1 for f in fills if f.get("side") == "SELL"),

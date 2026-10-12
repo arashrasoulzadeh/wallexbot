@@ -18,7 +18,7 @@ See [backtesting.md](backtesting.md).
 wallexbot ui                  # http://127.0.0.1:8080, runs kept in memory
 wallexbot ui --db runs.db     # keep runs in SQLite
 ```
-Pages: **Configure** (live checks that the grid can beat its fees, save/reset), **Backtest**,
+Pages: **History**, **Configure** (live checks that the grid can beat its fees, save/reset), **Backtest**,
 **Paper trading** (start, pause, resume, stop, kill switch, live ladder, orders, fills, balances),
 **Runs**, **Dashboard**. English and Persian (RTL) with a switch in the header. The configuration you
 save on the Configure page is kept in the browser and used by Backtest and Paper trading.
@@ -26,7 +26,7 @@ save on the Configure page is kept in the browser and used by Backtest and Paper
 The dashboard has no login and can start runs, so it only listens on this machine. `--allow-remote`
 overrides that (with a warning); put it behind something that authenticates before you do.
 
-The History and Settings pages are not implemented yet and are not linked.
+The **History** page shows past runs (see [paper-trading.md](paper-trading.md#history)). The Settings page is not implemented yet and is not linked.
 
 ## Stopping the Bot
 

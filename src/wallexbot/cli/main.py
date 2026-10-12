@@ -64,7 +64,10 @@ def create_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("--to", dest="to_ts", required=True, help="End date")
     backtest_parser.add_argument("--output", help="Write a Markdown report to this file")
     backtest_parser.add_argument(
-        "--resolution", default="60", help="Candle resolution: 1, 15, 60, 240, 1D (default 60)"
+        "--resolution",
+        default="60",
+        help="Wallex candle resolution (default 60 = hourly). Note: the API returns 1-minute "
+        "bars for 15 and hourly bars for 240; see docs/wallex-api.md",
     )
 
     # paper command

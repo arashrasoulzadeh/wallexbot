@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from wallexbot.analytics.run_history import (
     DEFAULT_TZ,
+    Point,
     daily_breakdown,
     downsample,
     fills_csv,
@@ -241,13 +242,37 @@ def create_app(
             base["status"] = live["status"]["state"]
         return base
 
+    def _start_point(run_id: str, points: list[Point], since: int | None) -> Point | None:
+        """Where a summary is measured from: the last snapshot before the range, or else the
+        run's starting state (initial equity before the entry fee, nothing earned or paid yet)."""
+        if since is not None:
+            before = parse_snapshots(repo.get_snapshots(run_id, until=since - 1)[-1:])
+            if before:
+                return before[0]
+        checkpoint = repo.get_checkpoint(run_id)
+        initial = ((checkpoint or {}).get("engine") or {}).get("initial_equity")
+        if initial is None or not points:
+            return None  # nothing better than the first snapshot
+        first = points[0]
+        return Point(
+            ts=first.ts,
+            price=first.price,
+            equity=Decimal(str(initial)),
+            realized=Decimal(0),
+            fees=Decimal(0),
+            open_orders=0,
+            fills=0,
+            cycles=0,
+        )
+
     @app.get("/api/history/runs")
     async def history_runs() -> Any:
         rows = []
         for run in repo.list_runs():
             base = _history_run(run["id"])
             points = parse_snapshots(repo.get_snapshots(run["id"]))
-            rows.append(run_summary(base, points, repo.get_fills(run["id"])))
+            start = _start_point(run["id"], points, None)
+            rows.append(run_summary(base, points, repo.get_fills(run["id"]), start))
         rows.sort(key=lambda r: r["started_at"], reverse=True)
         return _jsonable(rows)
 
@@ -274,14 +299,15 @@ def create_app(
         ]
         shown = [f for f in all_fills if side is None or f.get("side") == side]
         events = repo.get_events(run_id)[-200:]
+        start = _start_point(run_id, points, since)
         return _jsonable(
             {
-                "summary": run_summary(base, points, all_fills),
+                "summary": run_summary(base, points, all_fills, start),
                 "series": [
                     {"ts": p.ts, "price": p.price, "equity": p.equity, "realized": p.realized}
                     for p in downsample(points, max_points)
                 ],
-                "daily": daily_breakdown(points, all_fills, tz),
+                "daily": daily_breakdown(points, all_fills, tz, start),
                 "fills": list(reversed(shown))[:fills_limit],
                 "events": list(reversed(events)),
                 "tz": tz,

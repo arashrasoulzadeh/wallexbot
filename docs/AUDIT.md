@@ -22,7 +22,8 @@ The project is **a broad but unreliable first draft, not a finished Phases 1-17*
 | Engine | **built**: async loop on live prices, grid built on the first real tick, fills answered, kill switch, risk halt, graceful stop, SQLite recording; `wallexbot paper`; live-tested on the public WebSocket (37 tests) |
 | Web UI | **rebuilt** (old pages never rendered): real RunManager + endpoints + live stream, Configure/Backtest/Paper/Runs/Dashboard in English and Persian, localhost-only by default; verified in a real browser against live prices (47 tests) |
 | Crash recovery | **built**: checkpoints in SQLite, exact state restore (differential test at 40 crash points), downtime replay from public candles, `paper --resume`, API `POST /api/runs/{id}/recover`, dashboard banner; verified with a real `kill -9` (39 tests + 54 state tests) |
-| Coverage | **81.8%**, gate is 90% (still failing) |
+| History | **built**: price/equity snapshots recorded by the engine, History API (summary, curves, daily results in Tehran time, trades, CSV), History page with charts; verified in a browser on 3 days of real market data (45 tests) |
+| Coverage | **82%**, gate is 90% (still failing) |
 
 Real bugs found by the type check and fixed with regression tests: `HistoricalDataStore` crashed on `Symbol.value`; the optimizer
 passed a wrong keyword and raw Decimals as balances (hidden by a bare `except`, so it silently returned nothing); its random-search
@@ -36,7 +37,7 @@ field names, paths and frame shapes, tested only against matching mocks) and are
 2. ~~Engine is unfinished~~ **fixed** (docs/paper-trading.md). Crash recovery now exists (see the progress table). Remaining: no fill inference from polling (the simulator reports fills directly); WebSocket gaps during a live run are not resynced.
    The web UI is now wired to the engine (see the progress table).
 3. **Simulator has no market orders**: MARKET and STOP_MARKET are now rejected with a clear error (they used to be accepted and never fill); the 2% price-move cancel rule (5.4.4) is still missing.
-4. **History API is stubs** (the History and Settings pages are no longer linked or served as real pages): six `/api/history/*` endpoints return `[]`; the history tables from Phase 14 (ticks, trades, candles, balance and PnL snapshots, grid cycles) are not in the schema; `/api/stream` only echoes.
+4. ~~History API is stubs~~ **built** on the main repository (the old `analytics/history.py` / `analytics/api.py` stubs are superseded and unused; they can be deleted). The Settings page is not implemented and not linked. Previously: the history tables from Phase 14 (ticks, trades, candles, balance and PnL snapshots, grid cycles) are not in the schema; `/api/stream` only echoes.
 5. **WebSocket**: no gap resync after reconnect (6.4.5), no 50-messages-per-channel guard (6.4.6); `PriceFeed` for live WebSocket data is not wired to the engine.
 6. **Coverage 81.8%** vs 90% gate; weakest: `analytics/history.py`, `analytics/api.py`, `engine/actions.py`, `strategy/grid/sizing.py`, `sim/rate_limiter.py`.
 7. **Placeholder tests**: several remaining tests are `pass` or only check `hasattr` (`test_indicators.py::TestOptimizer`, `TestHistoricalDataStore`, parts of the engine/anomaly tests).
@@ -106,3 +107,14 @@ Items that look genuinely present: pure grid level generation/sizing/placement, 
 4. Fix the example config and enforce the fee break-even and min-notional rules in config validation; keep fee/min-notional as clearly-marked placeholders until D16/D17 are answered.
 5. Fill the missing Phase 14 tables and the 2% market-order rule, add the 30-minute WS rotation, add the Persian UI catalog.
 6. Then update `TODO.md` checkboxes only for items verified by tests.
+
+
+### Found while building History (2026-10-12)
+
+- **Data corruption (fixed):** orders had a global primary key but every run numbers its orders `ord_0, ord_1...`, so a
+  second run in the same database overwrote the first run's orders. Stored order ids now include the run id.
+- **Event spam (fixed):** a run that stayed out of the grid range logged the same pause/warning on every price
+  (2,710 of 2,762 events in a 3-day replay). Announced once now.
+- **Wallex candle API differs from its docs:** `resolution=15` returns 1-minute bars and `240` returns hourly bars; `1` fails for
+  multi-day windows (see docs/wallex-api.md). The backtest `--resolution` option and the UI's candle-size list use
+  the documented names, so what they select is the API's behaviour, not the label.

@@ -142,3 +142,23 @@ def test_leaving_the_grid_range_is_reported_once():
 
     exits = [e for e in session.events if "left the grid range" in e]
     assert len(exits) == 2
+
+
+def test_staying_out_of_range_announces_it_once_not_on_every_price():
+    session, _, _, _ = make()
+    session.start(D("100"), 1_000)
+    for i, price in enumerate(["120", "121", "122", "123", "124"]):
+        session.on_tick(D(price), 2_000 + i * 1_000)
+
+    text = " | ".join(session.events)
+    assert text.count("left the grid range") == 1
+    assert sum(1 for e in session.events if e.startswith("paused")) == 1
+    assert sum(1 for e in session.events if e.startswith("warning")) == 1
+
+
+def test_coming_back_and_leaving_again_announces_again():
+    session, _, _, _ = make()
+    session.start(D("100"), 1_000)
+    for i, price in enumerate(["120", "121", "100", "100", "125", "126"]):
+        session.on_tick(D(price), 2_000 + i * 1_000)
+    assert sum(1 for e in session.events if e.startswith("paused")) == 2

@@ -150,6 +150,29 @@ def test_the_time_range_limits_everything_at_once(client, repo):
     assert sum(d["fills"] for d in body["daily"]) == 2
 
 
+def test_a_range_summary_is_measured_from_the_last_snapshot_before_it(client, repo):
+    run_id = seed(repo)
+    since = ms(
+        "2026-10-10T20:00:00"
+    )  # after the 15:00 snapshot (1010, realized 8, fees 4, cycles 1)
+    s = client.get(f"/api/history/runs/{run_id}?since={since}").json()["summary"]
+
+    assert D(s["realized"]) == 17 and D(s["fees"]) == 5 and s["cycles"] == 3  # 25-8, 9-4, 4-1
+    assert D(s["return_pct"]) == D(20) / D(1010) * 100  # 1010 -> 1030
+
+
+def test_the_whole_run_summary_starts_from_the_initial_equity_before_the_entry_fee(client, repo):
+    run_id = seed(repo)
+    repo.save_checkpoint(
+        run_id, {"version": 1, "engine": {"initial_equity": "980"}}
+    )  # as the engine saves it
+    s = client.get(f"/api/history/runs/{run_id}").json()["summary"]
+    assert D(s["return_pct"]) == D(50) / D(980) * 100  # 980 -> 1030
+    assert D(s["fees"]) == 9 and D(s["realized"]) == 25  # running totals from zero
+    first_day = client.get(f"/api/history/runs/{run_id}").json()["daily"][0]
+    assert D(first_day["equity_change"]) == 30  # 980 -> 1010, the entry fee is inside it
+
+
 def test_trades_can_be_filtered_by_side_and_limited(client, repo):
     run_id = seed(repo)
     buys = client.get(f"/api/history/runs/{run_id}?side=BUY").json()["fills"]
@@ -254,3 +277,7 @@ def test_a_real_paper_run_appears_in_history_and_matches_its_own_status():
     assert s["status"] == "stopped"
     last_equity = D(history["series"][-1]["equity"])
     assert last_equity == D(live["equity"])
+    engine_return = (
+        (D(live["equity"]) - D(live["initial_equity"])) / D(live["initial_equity"]) * 100
+    )
+    assert D(s["return_pct"]) == engine_return  # History agrees with the engine, entry fee included
