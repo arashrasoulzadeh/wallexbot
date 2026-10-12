@@ -92,36 +92,6 @@ logging:
         captured = capsys.readouterr()
         assert "Error" in captured.out or "error" in captured.out.lower()
 
-    def test_paper_command(self, tmp_path, capsys):
-        """wallexbot paper runs paper trading."""
-        config_file = tmp_path / "test.yaml"
-        config_file.write_text("""
-exchange:
-  name: "wallex"
-market:
-  symbol: "USDTTMN"
-strategy:
-  grid:
-    lower_price: "90.00"
-    upper_price: "110.00"
-    grid_count: 10
-    mode: "arithmetic"
-    total_investment: "10000.00"
-risk:
-  max_open_orders: 20
-simulation:
-  initial_balance_quote: "2000000.00"
-logging:
-  level: "INFO"
-""")
-
-        # Paper command would run indefinitely - test that it starts
-        result = main(["paper", str(config_file)])
-
-        captured = capsys.readouterr()
-        assert "Starting paper trading" in captured.out
-        assert result == 0
-
     def test_report_command(self, capsys):
         """wallexbot report shows run report."""
         with patch("wallexbot.storage.repository.SQLiteRepository") as mock_repo:

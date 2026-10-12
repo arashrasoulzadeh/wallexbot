@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from wallexbot.analytics.backtest import BacktestResult
+from wallexbot.engine.bot import EngineState, EngineStatus
 
 
 def _money(value: Decimal) -> str:
@@ -77,3 +78,44 @@ No API keys were used.
 
 {events}
 """
+
+
+def format_status_line(status: EngineStatus) -> str:
+    """One line for the periodic progress output of a paper run."""
+    equity = ""
+    if status.equity is not None and status.initial_equity:
+        change = (status.equity - status.initial_equity) / status.initial_equity * 100
+        equity = f" equity {change:+.3f}%"
+    price = f" price {status.last_price}" if status.last_price is not None else ""
+    return (
+        f"[{status.state.value}]{price}{equity} | orders {status.open_orders} "
+        f"| fills {status.fills} | cycles {status.completed_cycles}"
+    )
+
+
+def format_engine_status(symbol: str, status: EngineStatus) -> str:
+    """Final summary of a paper run."""
+    change = Decimal(0)
+    if status.equity is not None and status.initial_equity:
+        change = (status.equity - status.initial_equity) / status.initial_equity * 100
+    rows = [
+        ("State", status.state.value),
+        ("Last price", str(status.last_price)),
+        ("Return", _pct(change)),
+        ("Realized PnL (cycles, net of fees)", _money(status.realized_pnl)),
+        ("Completed cycles", str(status.completed_cycles)),
+        ("Fills", str(status.fills)),
+        ("Fees paid", _money(status.fees_paid)),
+        ("Open orders", str(status.open_orders)),
+        ("Rejected orders", str(status.rejected_orders)),
+        ("Prices processed", str(status.ticks_processed)),
+    ]
+    width = max(len(label) for label, _ in rows)
+    lines = [f"Paper trading {symbol}"]
+    lines += [f"{label:<{width}}  {value}" for label, value in rows]
+    if status.state is EngineState.HALTED:
+        lines.append(f"HALTED: {status.halt_reason}")
+    if status.events:
+        lines.append("Recent events:")
+        lines += [f"  - {event}" for event in status.events[-8:]]
+    return "\n".join(lines)

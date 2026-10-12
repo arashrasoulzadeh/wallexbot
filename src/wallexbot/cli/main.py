@@ -1,12 +1,33 @@
 """Main CLI entry point."""
 
 import argparse
+import asyncio
 import logging
 import sys
+from dataclasses import dataclass
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
 
+from wallexbot.analytics.backtest import Backtester
+from wallexbot.analytics.replay import candles_to_ticks
+from wallexbot.analytics.report import (
+    format_engine_status,
+    format_status_line,
+    format_summary,
+    render_markdown,
+)
 from wallexbot.config.schema import load_config
-from wallexbot.strategy.grid.parameters import GridMode
+from wallexbot.domain.balance import Balance
+from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.domain.market import Market, Symbol
+from wallexbot.engine import BotEngine, EngineConfig, RiskMonitor
+from wallexbot.sim.exchange import SimulatedExchange
+from wallexbot.storage.repository import SQLiteRepository
+from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.strategy.grid.parameters import GridMode, GridParameters
 from wallexbot.wallex.client import WallexRestClient
+from wallexbot.wallex.price_feed import PriceFeedReplay
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -51,6 +72,16 @@ def create_parser() -> argparse.ArgumentParser:
     # paper command
     paper_parser = subparsers.add_parser("paper", help="Run paper trading on live prices")
     paper_parser.add_argument("config", help="Config YAML file")
+    paper_parser.add_argument(
+        "--feed", choices=["ws", "poll"], default="ws", help="Price source (default: ws)"
+    )
+    paper_parser.add_argument(
+        "--duration", type=float, help="Stop after this many seconds (default: run until Ctrl+C)"
+    )
+    paper_parser.add_argument("--db", help="Record the run in this SQLite database")
+    paper_parser.add_argument(
+        "--status-every", type=float, default=30.0, help="Seconds between status lines"
+    )
 
     # report command
     report_parser = subparsers.add_parser("report", help="Generate report for run")
@@ -136,7 +167,9 @@ def main(args: list[str] | None = None) -> int:
                 parsed.config, parsed.from_ts, parsed.to_ts, parsed.output, parsed.resolution
             )
         elif parsed.command == "paper":
-            return cmd_paper(parsed.config)
+            return cmd_paper(
+                parsed.config, parsed.feed, parsed.duration, parsed.db, parsed.status_every
+            )
         elif parsed.command == "report":
             return cmd_report(parsed.run_id)
         elif parsed.command == "ui":
@@ -237,11 +270,101 @@ def _parse_date(date_str: str) -> int:
         return int(date_str)
 
 
-def make_rest_client() -> "WallexRestClient":
+def make_rest_client() -> WallexRestClient:
     """Public Wallex client (a function so tests can swap in a fake)."""
-    from wallexbot.wallex.client import WallexRestClient
-
     return WallexRestClient()
+
+
+def make_price_feed(kind: str, symbol: Symbol, client: WallexRestClient) -> Any:
+    """Live price feed for paper trading: public WebSocket trades ("ws") or REST polling ("poll")."""
+    from wallexbot.wallex.live_feed import RestPollingFeed, WebSocketTradeFeed
+
+    if kind == "poll":
+        return RestPollingFeed(symbol, client)
+    return WebSocketTradeFeed(symbol)
+
+
+@dataclass
+class _GridSetup:
+    """A validated config turned into the objects a run needs."""
+
+    symbol: str
+    market: Market
+    params: GridParameters
+    fees: FeeSchedule
+    min_rule: MinNotionalRule
+    maker: Decimal
+    taker: Decimal
+    min_notional: Decimal
+    risk: RiskMonitor
+    initial_quote: Decimal
+    initial_base: Decimal
+
+    def new_exchange(self) -> SimulatedExchange:
+        return SimulatedExchange(
+            market=self.market,
+            fee_schedule_config=self.fees,
+            min_notional_rule=self.min_rule,
+            initial_balances={
+                self.market.quote: Balance(free=self.initial_quote, locked=Decimal(0)),
+                self.market.base: Balance(free=self.initial_base, locked=Decimal(0)),
+            },
+        )
+
+    def new_strategy(self) -> GridStrategy:
+        return GridStrategy(
+            self.market, self.params, fee_schedule=self.fees, min_notional_rule=self.min_rule
+        )
+
+
+def _load_grid_setup(config_file: str, client: WallexRestClient) -> _GridSetup | None:
+    """Load the config and the market's real precisions; prints the problem and returns None."""
+    try:
+        config = load_config(config_file)
+    except (ValueError, OSError) as exc:
+        print(f"Error: invalid config: {exc}")
+        return None
+
+    symbol = str(config.market.symbol)
+    info = next((m for m in client.get_markets() if str(m.symbol) == symbol), None)
+    if info is None:
+        print(f"Error: market {symbol} not found (is it a spot market?)")
+        return None
+    market = Market(
+        symbol=Symbol(symbol),
+        base=info.base_asset,
+        quote=info.quote_asset,
+        price_precision=info.price_precision,
+        amount_precision=info.amount_precision,
+        is_spot=info.is_spot,
+    )
+
+    grid = config.strategy["grid"]
+    sim = config.simulation
+    maker, taker = Decimal(sim.fee_maker), Decimal(sim.fee_taker)
+    min_notional = Decimal(sim.min_notional)
+    return _GridSetup(
+        symbol=symbol,
+        market=market,
+        params=GridParameters(
+            lower_price=Decimal(grid.lower_price),
+            upper_price=Decimal(grid.upper_price),
+            grid_count=grid.grid_count,
+            mode=grid.mode,
+            total_investment=Decimal(grid.total_investment),
+        ),
+        fees=FeeSchedule(maker_rate=maker, taker_rate=taker),
+        min_rule=MinNotionalRule(min_notional=min_notional, min_quantity=Decimal(sim.min_quantity)),
+        maker=maker,
+        taker=taker,
+        min_notional=min_notional,
+        risk=RiskMonitor(
+            max_drawdown=Decimal(config.risk.max_drawdown),
+            daily_loss_limit=Decimal(config.risk.daily_loss_limit),
+        ),
+        initial_quote=Decimal(sim.initial_balance_quote),
+        initial_base=Decimal(sim.initial_balance_base),
+    )
 
 
 def cmd_backtest(
@@ -252,26 +375,6 @@ def cmd_backtest(
     resolution: str = "60",
 ) -> int:
     """Backtest the configured grid on public candles (paper trading, no API key)."""
-    from decimal import Decimal
-    from pathlib import Path
-
-    from wallexbot.analytics.backtest import Backtester
-    from wallexbot.analytics.replay import candles_to_ticks
-    from wallexbot.analytics.report import format_summary, render_markdown
-    from wallexbot.domain.balance import Balance
-    from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-    from wallexbot.domain.market import Market, Symbol
-    from wallexbot.sim.exchange import SimulatedExchange
-    from wallexbot.strategy.grid.interface import GridStrategy
-    from wallexbot.strategy.grid.parameters import GridParameters
-    from wallexbot.wallex.price_feed import PriceFeedReplay
-
-    try:
-        config = load_config(config_file)
-    except (ValueError, OSError) as exc:
-        print(f"Error: invalid config: {exc}")
-        return 1
-
     try:
         start, end = _parse_date(from_ts), _parse_date(to_ts)
     except ValueError:
@@ -281,72 +384,37 @@ def cmd_backtest(
         print("Error: --from must be before --to")
         return 1
 
-    symbol = str(config.market.symbol)
     client = make_rest_client()
-
-    info = next((m for m in client.get_markets() if str(m.symbol) == symbol), None)
-    if info is None:
-        print(f"Error: market {symbol} not found (is it a spot market?)")
+    setup = _load_grid_setup(config_file, client)
+    if setup is None:
         return 1
-    market = Market(
-        symbol=Symbol(symbol),
-        base=info.base_asset,
-        quote=info.quote_asset,
-        price_precision=info.price_precision,
-        amount_precision=info.amount_precision,
-        is_spot=info.is_spot,
-    )
 
-    print(f"Fetching {symbol} candles ({resolution}) ...")
-    candles = client.get_candles(symbol, resolution, start, end)
+    print(f"Fetching {setup.symbol} candles ({resolution}) ...")
+    candles = client.get_candles(setup.symbol, resolution, start, end)
     if not candles:
         print("Error: no candle data for that period")
         return 1
 
-    grid = config.strategy["grid"]
-    sim = config.simulation
-    maker, taker = Decimal(sim.fee_maker), Decimal(sim.fee_taker)
-    min_notional = Decimal(sim.min_notional)
-    params = GridParameters(
-        lower_price=Decimal(grid.lower_price),
-        upper_price=Decimal(grid.upper_price),
-        grid_count=grid.grid_count,
-        mode=grid.mode,
-        total_investment=Decimal(grid.total_investment),
-    )
-    fees = FeeSchedule(maker_rate=maker, taker_rate=taker)
-    min_rule = MinNotionalRule(min_notional=min_notional, min_quantity=Decimal(sim.min_quantity))
-    exchange = SimulatedExchange(
-        market=market,
-        fee_schedule_config=fees,
-        min_notional_rule=min_rule,
-        initial_balances={
-            market.quote: Balance(free=Decimal(sim.initial_balance_quote), locked=Decimal(0)),
-            market.base: Balance(free=Decimal(sim.initial_balance_base), locked=Decimal(0)),
-        },
-    )
-    strategy = GridStrategy(market, params, fee_schedule=fees, min_notional_rule=min_rule)
     backtester = Backtester(
-        strategy=strategy,
-        exchange=exchange,
+        strategy=setup.new_strategy(),
+        exchange=setup.new_exchange(),
         price_feed=PriceFeedReplay(candles_to_ticks(candles)),
     )
-
     try:
         result = backtester.run()
     except ValueError as exc:  # e.g. grid orders below the minimum size
         print(f"Error: {exc}")
         return 1
 
-    print(format_summary(symbol, result))
+    print(format_summary(setup.symbol, result))
     if output:
         Path(output).write_text(
             render_markdown(
-                symbol,
+                setup.symbol,
                 result,
-                maker_fee=maker,
-                taker_fee=taker,
-                min_notional=min_notional,
+                maker_fee=setup.maker,
+                taker_fee=setup.taker,
+                min_notional=setup.min_notional,
                 candles=len(candles),
             ),
             encoding="utf-8",
@@ -355,11 +423,63 @@ def cmd_backtest(
     return 0
 
 
-def cmd_paper(config_file: str) -> int:
-    """Run paper trading."""
-    print("Starting paper trading...")
-    print("Press Ctrl+C to stop")
-    # This would run the bot engine
+async def _run_paper(engine: BotEngine, symbol: str, duration: float | None, every: float) -> None:
+    """Run the engine, printing a status line periodically, until it ends or time is up."""
+    task = engine.start()
+    elapsed = 0.0
+    try:
+        while not task.done():
+            wait = every if duration is None else min(every, max(duration - elapsed, 0.0))
+            await asyncio.wait({task}, timeout=wait)
+            elapsed += wait
+            if not task.done():
+                print(format_status_line(engine.status()))
+            if duration is not None and elapsed >= duration:
+                break
+    finally:
+        await engine.stop()
+    if task.done() and not task.cancelled() and task.exception() is not None:
+        raise task.exception()  # type: ignore[misc]
+
+
+def cmd_paper(
+    config_file: str,
+    feed: str = "ws",
+    duration: float | None = None,
+    db: str | None = None,
+    status_every: float = 30.0,
+) -> int:
+    """Paper-trade the configured grid on live public prices (no API key, no real orders)."""
+    client = make_rest_client()
+    setup = _load_grid_setup(config_file, client)
+    if setup is None:
+        return 1
+
+    price_feed = make_price_feed(feed, setup.market.symbol, client)
+    repository = SQLiteRepository(db) if db else None
+    engine = BotEngine(
+        EngineConfig(
+            strategy=setup.new_strategy(),
+            exchange=setup.new_exchange(),
+            price_feed=price_feed,
+            risk=setup.risk,
+            repository=repository,
+            run_name=f"paper-{setup.symbol}",
+        )
+    )
+
+    print(f"Paper trading {setup.symbol} on live prices ({feed}). Press Ctrl+C to stop.")
+    print("Paper only: orders exist inside the simulator, nothing is sent to Wallex.")
+    try:
+        asyncio.run(_run_paper(engine, setup.symbol, duration, status_every))
+    except KeyboardInterrupt:
+        print("\nInterrupted, stopping...")
+    finally:
+        closer = getattr(price_feed, "close", None)
+        if closer is not None:
+            asyncio.run(closer())
+
+    print(format_engine_status(setup.symbol, engine.status()))
     return 0
 
 
