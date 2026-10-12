@@ -92,43 +92,6 @@ logging:
         captured = capsys.readouterr()
         assert "Error" in captured.out or "error" in captured.out.lower()
 
-    def test_backtest_command(self, tmp_path, capsys):
-        """wallexbot backtest runs backtest."""
-        config_file = tmp_path / "test.yaml"
-        config_file.write_text("""
-exchange:
-  name: "wallex"
-market:
-  symbol: "USDTTMN"
-strategy:
-  grid:
-    lower_price: "90.00"
-    upper_price: "110.00"
-    grid_count: 10
-    mode: "arithmetic"
-    total_investment: "10000.00"
-risk:
-  max_open_orders: 20
-simulation:
-  initial_balance_quote: "2000000.00"
-logging:
-  level: "INFO"
-""")
-
-        # Test that the command runs (placeholder implementation)
-        with patch("wallexbot.cli.main.load_config") as mock_load:
-            mock_config = Mock()
-            mock_load.return_value = mock_config
-            # Should not raise exception
-            result = main(
-                ["backtest", str(config_file), "--from", "2024-01-01", "--to", "2024-01-31"]
-            )
-
-        captured = capsys.readouterr()
-        assert "Running backtest" in captured.out
-        assert "Backtest completed" in captured.out
-        assert result == 0
-
     def test_paper_command(self, tmp_path, capsys):
         """wallexbot paper runs paper trading."""
         config_file = tmp_path / "test.yaml"

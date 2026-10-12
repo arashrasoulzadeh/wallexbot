@@ -43,7 +43,10 @@ def create_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("config", help="Config YAML file")
     backtest_parser.add_argument("--from", dest="from_ts", required=True, help="Start date")
     backtest_parser.add_argument("--to", dest="to_ts", required=True, help="End date")
-    backtest_parser.add_argument("--output", help="Output report file")
+    backtest_parser.add_argument("--output", help="Write a Markdown report to this file")
+    backtest_parser.add_argument(
+        "--resolution", default="60", help="Candle resolution: 1, 15, 60, 240, 1D (default 60)"
+    )
 
     # paper command
     paper_parser = subparsers.add_parser("paper", help="Run paper trading on live prices")
@@ -129,7 +132,9 @@ def main(args: list[str] | None = None) -> int:
                 parsed.symbol, parsed.resolution, parsed.from_ts, parsed.to_ts, parsed.output
             )
         elif parsed.command == "backtest":
-            return cmd_backtest(parsed.config, parsed.from_ts, parsed.to_ts, parsed.output)
+            return cmd_backtest(
+                parsed.config, parsed.from_ts, parsed.to_ts, parsed.output, parsed.resolution
+            )
         elif parsed.command == "paper":
             return cmd_paper(parsed.config)
         elif parsed.command == "report":
@@ -232,11 +237,121 @@ def _parse_date(date_str: str) -> int:
         return int(date_str)
 
 
-def cmd_backtest(config_file: str, from_ts: str, to_ts: str, output: str | None) -> int:
-    """Run backtest."""
-    print("Running backtest...")
-    # This is a placeholder - full implementation would load data and run
-    print("Backtest completed")
+def make_rest_client() -> "WallexRestClient":
+    """Public Wallex client (a function so tests can swap in a fake)."""
+    from wallexbot.wallex.client import WallexRestClient
+
+    return WallexRestClient()
+
+
+def cmd_backtest(
+    config_file: str,
+    from_ts: str,
+    to_ts: str,
+    output: str | None,
+    resolution: str = "60",
+) -> int:
+    """Backtest the configured grid on public candles (paper trading, no API key)."""
+    from decimal import Decimal
+    from pathlib import Path
+
+    from wallexbot.analytics.backtest import Backtester
+    from wallexbot.analytics.replay import candles_to_ticks
+    from wallexbot.analytics.report import format_summary, render_markdown
+    from wallexbot.domain.balance import Balance
+    from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+    from wallexbot.domain.market import Market, Symbol
+    from wallexbot.sim.exchange import SimulatedExchange
+    from wallexbot.strategy.grid.interface import GridStrategy
+    from wallexbot.strategy.grid.parameters import GridParameters
+    from wallexbot.wallex.price_feed import PriceFeedReplay
+
+    try:
+        config = load_config(config_file)
+    except (ValueError, OSError) as exc:
+        print(f"Error: invalid config: {exc}")
+        return 1
+
+    try:
+        start, end = _parse_date(from_ts), _parse_date(to_ts)
+    except ValueError:
+        print("Error: dates must be ISO dates (2024-01-31) or unix seconds")
+        return 1
+    if start >= end:
+        print("Error: --from must be before --to")
+        return 1
+
+    symbol = str(config.market.symbol)
+    client = make_rest_client()
+
+    info = next((m for m in client.get_markets() if str(m.symbol) == symbol), None)
+    if info is None:
+        print(f"Error: market {symbol} not found (is it a spot market?)")
+        return 1
+    market = Market(
+        symbol=Symbol(symbol),
+        base=info.base_asset,
+        quote=info.quote_asset,
+        price_precision=info.price_precision,
+        amount_precision=info.amount_precision,
+        is_spot=info.is_spot,
+    )
+
+    print(f"Fetching {symbol} candles ({resolution}) ...")
+    candles = client.get_candles(symbol, resolution, start, end)
+    if not candles:
+        print("Error: no candle data for that period")
+        return 1
+
+    grid = config.strategy["grid"]
+    sim = config.simulation
+    maker, taker = Decimal(sim.fee_maker), Decimal(sim.fee_taker)
+    min_notional = Decimal(sim.min_notional)
+    params = GridParameters(
+        lower_price=Decimal(grid.lower_price),
+        upper_price=Decimal(grid.upper_price),
+        grid_count=grid.grid_count,
+        mode=grid.mode,
+        total_investment=Decimal(grid.total_investment),
+    )
+    fees = FeeSchedule(maker_rate=maker, taker_rate=taker)
+    min_rule = MinNotionalRule(min_notional=min_notional, min_quantity=Decimal(sim.min_quantity))
+    exchange = SimulatedExchange(
+        market=market,
+        fee_schedule_config=fees,
+        min_notional_rule=min_rule,
+        initial_balances={
+            market.quote: Balance(free=Decimal(sim.initial_balance_quote), locked=Decimal(0)),
+            market.base: Balance(free=Decimal(sim.initial_balance_base), locked=Decimal(0)),
+        },
+    )
+    strategy = GridStrategy(market, params, fee_schedule=fees, min_notional_rule=min_rule)
+    backtester = Backtester(
+        strategy=strategy,
+        exchange=exchange,
+        price_feed=PriceFeedReplay(candles_to_ticks(candles)),
+    )
+
+    try:
+        result = backtester.run()
+    except ValueError as exc:  # e.g. grid orders below the minimum size
+        print(f"Error: {exc}")
+        return 1
+
+    print(format_summary(symbol, result))
+    if output:
+        Path(output).write_text(
+            render_markdown(
+                symbol,
+                result,
+                maker_fee=maker,
+                taker_fee=taker,
+                min_notional=min_notional,
+                candles=len(candles),
+            ),
+            encoding="utf-8",
+        )
+        print(f"Report written to {output}")
     return 0
 
 

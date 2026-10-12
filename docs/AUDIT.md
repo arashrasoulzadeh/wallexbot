@@ -17,7 +17,9 @@ The project is **a broad but unreliable first draft, not a finished Phases 1-17*
 | `ruff check` | **clean** (was 391 errors); code formatted with `ruff format` |
 | `mypy --strict src` | **clean** (was 267 errors) |
 | Tests | 367 passing (was 322); empty placeholder tests removed |
-| Coverage | **71.1%**, gate is 90% (still failing) |
+| Simulator ledger (fees, settlement, fill price, double lock) | fixed, 12 tests incl. 300-step randomized conservation check |
+| Backtester | **built**: trades, answers fills, ledger-consistent PnL, candle replay, `wallexbot backtest` CLI + Markdown report (24 tests) |
+| Coverage | **74.6%**, gate is 90% (still failing) |
 
 Real bugs found by the type check and fixed with regression tests: `HistoricalDataStore` crashed on `Symbol.value`; the optimizer
 passed a wrong keyword and raw Decimals as balances (hidden by a bare `except`, so it silently returned nothing); its random-search
@@ -27,15 +29,13 @@ field names, paths and frame shapes, tested only against matching mocks) and are
 
 ### Still open (found, not fixed)
 
-1. **Backtester is a stub**: `Backtester.run()` discards the initial orders from `on_start`, `_execute_action` is `return None`, so no backtest ever
-   trades. "Realized PnL" is final minus initial equity (includes unrealized). `completed_cycles`, `fees_paid`, `avg_profit_per_cycle` are never filled.
-   Tests only check attributes exist. Optimizer scores are therefore meaningless until this is real.
+1. ~~Backtester is a stub~~ **fixed** (see docs/backtesting.md). Remaining: no volume/queue modelling, no market orders.
 2. **Engine is unfinished**: `engine/bot.py` starts the grid at a hard-coded price of 100 ("will be updated from feed"), `process_next_tick` is `pass`, the
    polling fallback never infers fills, and the price loop swallows every exception.
-3. **Simulator has no market orders**: MARKET orders are accepted as `NEW`, lock nothing on the buy side and never fill; the 2% price-move cancel rule (5.4.4) is missing.
+3. **Simulator has no market orders**: MARKET and STOP_MARKET are now rejected with a clear error (they used to be accepted and never fill); the 2% price-move cancel rule (5.4.4) is still missing.
 4. **History API is stubs**: six `/api/history/*` endpoints return `[]`; the history tables from Phase 14 (ticks, trades, candles, balance and PnL snapshots, grid cycles) are not in the schema; `/api/stream` only echoes.
 5. **WebSocket**: no gap resync after reconnect (6.4.5), no 50-messages-per-channel guard (6.4.6); `PriceFeed` for live WebSocket data is not wired to the engine.
-6. **Coverage 71%** vs 90% gate; weakest: `analytics/history.py`, `analytics/api.py`, `engine/actions.py`, `strategy/grid/sizing.py`, `sim/rate_limiter.py`.
+6. **Coverage 74.6%** vs 90% gate; weakest: `analytics/history.py`, `analytics/api.py`, `engine/actions.py`, `strategy/grid/sizing.py`, `sim/rate_limiter.py`.
 7. **Placeholder tests**: several remaining tests are `pass` or only check `hasattr` (`test_indicators.py::TestOptimizer`, `TestHistoricalDataStore`, parts of the engine/anomaly tests).
 8. Real maker/taker fee and spot minimum order size are still unknown (D16, D17); `.env` key value should be rotated if real.
 

@@ -197,6 +197,33 @@ class SimulatedExchange:
         self._orders[order_id] = order
         return order
 
+    def use_clock(self, clock: Clock) -> None:
+        """Drive the exchange (and its rate limiter) from another clock, e.g. simulated time."""
+        self.clock = clock
+        self._rate_limiter = RateLimiter(max_requests=20, window_seconds=10, clock=clock)
+
+    def instant_buy(self, price: Decimal, quantity: Decimal) -> Fill:
+        """Buy at a given price right now as a taker (used to seed starting inventory).
+
+        Costs price * quantity of quote; the taker fee is charged in the base asset received.
+        """
+        base, quote = self.market.base, self.market.quote
+        cost = price * quantity
+        self._balances[quote] = self._balance(quote).subtract(cost)  # raises if insufficient
+        fee = (quantity * self._fee_schedule.taker_rate).quantize(Decimal("0.00000001"))
+        self._balances[base] = self._balance(base).add(quantity - fee)
+        self._order_sequence += 1
+        return Fill(
+            order_id=f"instant_{self._order_sequence}",
+            trade_id=f"instant_{self._order_sequence}",
+            price=price,
+            quantity=quantity,
+            fee=fee,
+            fee_asset=base,
+            is_maker=False,
+            timestamp=int(self.clock.now() * 1000),
+        )
+
     def cancel_order(self, order_id: str) -> None:
         """Cancel an open order."""
         self._apply_latency()

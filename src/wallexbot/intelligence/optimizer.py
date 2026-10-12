@@ -7,13 +7,14 @@ from decimal import Decimal
 from typing import Any
 
 from wallexbot.analytics.backtest import Backtester, BacktestMetrics, BacktestResult
+from wallexbot.analytics.replay import candles_to_ticks
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, Symbol
 from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.strategy.grid.interface import GridStrategy
 from wallexbot.strategy.grid.parameters import GridParameters
-from wallexbot.wallex.price_feed import PriceFeedReplay, PriceTick
+from wallexbot.wallex.price_feed import PriceFeedReplay
 
 
 @dataclass
@@ -318,17 +319,8 @@ def _run_single_backtest(
             },
         )
 
-        # Create price ticks from candles
-        ticks = []
-        for c in candles:
-            ticks.append(
-                PriceTick(
-                    symbol=Symbol("USDTTMN"),
-                    price=c.close,
-                    timestamp=c.open_time * 1000,
-                    source="replay",
-                )
-            )
+        # Four ticks per candle (open, extremes, close), not just the close
+        ticks = candles_to_ticks(candles)
 
         price_feed = PriceFeedReplay(ticks)
 

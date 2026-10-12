@@ -97,13 +97,38 @@ class TestBacktester:
             price_feed=price_feed,
         )
 
-    def test_run_deterministic(self, backtester):
-        """Run is deterministic."""
-        result1 = backtester.run()
-        result2 = backtester.run()
+    def test_run_deterministic(self, market, params, price_feed):
+        """Two fresh backtests on the same data give the same result."""
 
-        assert result1.metrics.realized_pnl == result2.metrics.realized_pnl
-        assert result1.metrics.total_return_pct == result2.metrics.total_return_pct
+        def fresh():
+            exchange = SimulatedExchange(
+                market=market,
+                fee_schedule_config=FeeSchedule(
+                    maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")
+                ),
+                min_notional_rule=MinNotionalRule(
+                    min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
+                ),
+                initial_balances={
+                    "TMN": Balance(free=Decimal("2000000.00"), locked=Decimal("0")),
+                    "USDT": Balance(free=Decimal("0"), locked=Decimal("0")),
+                },
+            )
+            return Backtester(
+                strategy=GridStrategy(market=market, params=params),
+                exchange=exchange,
+                price_feed=price_feed,
+            )
+
+        result1 = fresh().run()
+        result2 = fresh().run()
+
+        assert result1.metrics == result2.metrics
+
+    def test_a_backtester_cannot_run_twice(self, backtester):
+        backtester.run()
+        with pytest.raises(RuntimeError, match="already ran"):
+            backtester.run()
 
     def test_metrics_calculated(self, backtester):
         """Metrics calculated correctly."""

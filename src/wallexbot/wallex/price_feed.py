@@ -43,5 +43,10 @@ class PriceFeedReplay:
         for tick in self._ticks:
             yield tick
 
+    @property
+    def recorded_ticks(self) -> list[PriceTick]:
+        """The ticks this feed will replay, in order."""
+        return self._ticks
+
     def add_tick(self, tick: PriceTick) -> None:
         self._ticks.append(tick)
