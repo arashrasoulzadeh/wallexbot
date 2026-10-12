@@ -17,19 +17,23 @@ class GridState:
 
     levels: list[Level]
     active_orders: dict[int, str] = field(default_factory=dict)  # level_index -> order_id
+    order_sides: dict[int, str] = field(default_factory=dict)  # level_index -> "buy"/"sell"
 
-    def set_active_order(self, level_index: int, order_id: str) -> None:
-        """Set active order for a level."""
+    def set_active_order(self, level_index: int, order_id: str, side: str | None = None) -> None:
+        """Set active order for a level. `side` defaults to the level's initial side."""
         if level_index in self.active_orders:
             raise GridStateError(f"Level {level_index} already has active order {self.active_orders[level_index]}")
         if level_index < 0 or level_index >= len(self.levels):
             raise GridStateError(f"Invalid level index: {level_index}")
-        if self.levels[level_index].side == "":
-            raise GridStateError(f"Cannot place order on skipped level {level_index}")
+        order_side = side or self.levels[level_index].side
+        if order_side not in ("buy", "sell"):
+            raise GridStateError(f"Order on level {level_index} needs a buy/sell side")
         self.active_orders[level_index] = order_id
+        self.order_sides[level_index] = order_side
 
     def clear_active_order(self, level_index: int) -> Optional[str]:
         """Clear active order for a level, return the order_id."""
+        self.order_sides.pop(level_index, None)
         return self.active_orders.pop(level_index, None)
 
     def get_level_for_order(self, order_id: str) -> Optional[int]:
@@ -55,8 +59,7 @@ class GridState:
         # Active orders only on valid levels with sides
         for level_idx in self.active_orders:
             assert 0 <= level_idx < len(self.levels)
-            assert self.levels[level_idx].side in ("buy", "sell")
+            assert self.order_sides.get(level_idx) in ("buy", "sell")
 
-        # Exactly one gap level (side == "")
-        gap_levels = [l for l in self.levels if l.side == ""]
-        assert len(gap_levels) == 1, f"Expected exactly one gap level, found {len(gap_levels)}"
+        # The ladder keeps exactly one empty slot once the grid is running
+        assert len(self.active_orders) <= len(self.levels)

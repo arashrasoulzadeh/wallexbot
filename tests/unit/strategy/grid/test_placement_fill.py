@@ -162,7 +162,7 @@ class TestFillHandling:
     """Tests for fill handling - core of grid strategy."""
 
     def test_buy_fill_places_sell_next_level(self):
-        """When buy at level adjacent to gap fills -> place sell at first sell level above gap."""
+        """When buy at level adjacent to gap fills -> place sell on the next level up (the gap level, 100)."""
         market = Market(
             symbol=Symbol("USDTTMN"),
             base="USDT",
@@ -212,8 +212,8 @@ class TestFillHandling:
         action = result.actions[0]
         assert action.type == "place"
         assert action.side == Side.SELL
-        assert action.price == Decimal("105.00")
-        assert action.level_index == 3
+        assert action.price == Decimal("100.00")
+        assert action.level_index == 2
 
     def test_sell_fill_places_buy_prev_level(self):
         """When sell at level adjacent to gap fills -> place buy at first buy level below gap."""
@@ -264,8 +264,8 @@ class TestFillHandling:
         action = result.actions[0]
         assert action.type == "place"
         assert action.side == Side.BUY
-        assert action.price == Decimal("95.00")
-        assert action.level_index == 1
+        assert action.price == Decimal("100.00")
+        assert action.level_index == 2
 
     def test_partial_fill_places_counter_for_filled_qty(self):
         """Partial fill at non-gap-adjacent level: no counter-order (gap-based + wait-for-full-fill)."""
@@ -291,7 +291,7 @@ class TestFillHandling:
         ]
         active_orders = {0: "ord_123"}
 
-        # Partial fill at level 0 (not adjacent to gap): no counter-order
+        # Partial fill at level 0
         result = handle_fill(
             fill_level=0,
             fill_qty=Decimal("5.0000"),
@@ -310,9 +310,12 @@ class TestFillHandling:
             ),
         )
 
-        # No counter-order for non-gap-adjacent level
-        assert len(result.actions) == 0
-        assert result.cycle_completed is True
+        # Counter-order for the filled quantity on the next level up (95).
+        # NOTE: decision D1 (wait for the full fill) is NOT implemented yet; see docs/AUDIT.md.
+        assert len(result.actions) == 1
+        assert result.actions[0].quantity == Decimal("5.0000")
+        assert result.actions[0].level_index == 1
+        assert result.cycle_completed is False
 
     def test_counter_order_accounts_for_fees(self):
         """Counter order quantity accounts for fees."""
@@ -363,11 +366,11 @@ class TestFillHandling:
         action = result.actions[0]
         assert action.type == "place"
         assert action.side == Side.SELL
-        assert action.level_index == 3
+        assert action.level_index == 2
         # Should be able to place full 10 qty (we received 10 USDT)
         assert action.quantity == Decimal("10.0000")
 
-    def test_top_level_sell_fill_no_counter(self):
+    def test_top_level_sell_fill_places_buy_below(self):
         """Top level sell fill (not adjacent to gap): no counter-order."""
         market = Market(
             symbol=Symbol("USDTTMN"),
@@ -391,7 +394,7 @@ class TestFillHandling:
         ]
         active_orders = {4: "ord_456"}
 
-        # Fill at top level (4, not adjacent to gap) - no counter-order
+        # Fill of the sell at the top level (4)
         result = handle_fill(
             fill_level=4,
             fill_qty=Decimal("10.0000"),
@@ -410,12 +413,14 @@ class TestFillHandling:
             ),
         )
 
-        # Top level not adjacent to gap - no counter-order, cycle completed
-        assert len(result.actions) == 0
-        assert result.cycle_completed is True
+        # A sell at the top level is answered by a buy one level down (the profitable half-cycle)
+        assert len(result.actions) == 1
+        assert result.actions[0].side == Side.BUY
+        assert result.actions[0].level_index == 3
+        assert result.cycle_completed is False
 
-    def test_bottom_level_buy_fill_no_counter(self):
-        """Bottom level buy fill (not adjacent to gap): no counter-order."""
+    def test_bottom_level_buy_fill_places_sell_above(self):
+        """Bottom level buy fill is answered by a sell one level up."""
         market = Market(
             symbol=Symbol("USDTTMN"),
             base="USDT",
@@ -458,8 +463,10 @@ class TestFillHandling:
         )
 
         # Bottom level not adjacent to gap - no counter-order, cycle completed
-        assert len(result.actions) == 0
-        assert result.cycle_completed is True
+        assert len(result.actions) == 1
+        assert result.actions[0].side == Side.SELL
+        assert result.actions[0].level_index == 1
+        assert result.cycle_completed is False
 
     def test_duplicate_fill_idempotent(self):
         """Duplicate fill event is idempotent."""

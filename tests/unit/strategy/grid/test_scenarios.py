@@ -59,17 +59,19 @@ class TestGridScenarios:
 
         # Fill sell at 105 (level 3)
         actions = strategy.on_fill(3, Decimal("10.0000"), Decimal("0.021"), "USDT")
-        # Should place buy at 100... but 100 is skipped, so at 95 (level 1)
+        # Sell at 105 is answered by a buy one level down, at 100 (level 2)
         place_actions = [a for a in actions if a.type == "place"]
         assert len(place_actions) == 1
         assert place_actions[0].side.value == "BUY"
-        assert place_actions[0].level_index == 1
+        assert place_actions[0].level_index == 2
 
         # Fill sell at 110 (level 4)
         actions = strategy.on_fill(4, Decimal("10.0000"), Decimal("0.022"), "USDT")
         place_actions = [a for a in actions if a.type == "place"]
-        # Top level - no counter order
-        assert len(place_actions) == 0
+        # Top-level sell is answered by a buy one level down, at 105 (level 3)
+        assert len(place_actions) == 1
+        assert place_actions[0].side.value == "BUY"
+        assert place_actions[0].level_index == 3
 
     def test_downtrend_through_all_levels(self, market, params, fee_schedule, min_notional):
         """Price moves down through all buy levels, filling each."""
@@ -81,23 +83,23 @@ class TestGridScenarios:
         place_actions = [a for a in actions if a.type == "place"]
         assert len(place_actions) == 1
         assert place_actions[0].side.value == "SELL"
-        assert (
-            place_actions[0].level_index == 3
-        )  # Level 2 is skipped, so first sell level above gap is 3
+        assert place_actions[0].level_index == 2  # sell one level up, at 100
 
     def test_sideways_oscillation(self, market, params, fee_schedule, min_notional):
         """Price oscillates around a level, generating multiple fills."""
         strategy, _ = self._setup_strategy(market, params, Decimal("100.00"))
 
-        # Fill buy at 95 (level 1) -> place sell at 100 (skipped) -> 105 (level 3)
+        # Fill buy at 95 (level 1) -> sell placed at 100 (level 2)
         actions = strategy.on_fill(1, Decimal("10.0000"), Decimal("0.95"), "TMN")
         place_actions = [a for a in actions if a.type == "place"]
-        assert len(place_actions) == 1
+        assert [(a.side.value, a.level_index) for a in place_actions] == [("SELL", 2)]
 
-        # Fill sell at 105 (level 3) -> place buy at 100 (skipped) -> 95 (level 1)
-        actions = strategy.on_fill(3, Decimal("10.0000"), Decimal("0.021"), "USDT")
+        # That sell fills (level 2) -> buy placed back at 95 (level 1): one full cycle
+        actions = strategy.on_fill(2, Decimal("10.0000"), Decimal("0.021"), "USDT")
         place_actions = [a for a in actions if a.type == "place"]
-        assert len(place_actions) == 1
+        assert [(a.side.value, a.level_index) for a in place_actions] == [("BUY", 1)]
+        assert strategy.profit_tracker.total_cycles == 1
+        assert strategy.profit_tracker.total_profit > 0
 
     def test_gap_jump_over_several_levels(self, market, params, fee_schedule, min_notional):
         """Price jumps over several levels - only fills at levels with orders."""
@@ -108,7 +110,7 @@ class TestGridScenarios:
         actions = strategy.on_fill(3, Decimal("10.0000"), Decimal("0.021"), "USDT")
         place_actions = [a for a in actions if a.type == "place"]
         assert len(place_actions) == 1
-        assert place_actions[0].level_index == 1  # Buy at 95
+        assert place_actions[0].level_index == 2  # Buy at 100
 
     def test_whipsaw_at_one_level(self, market, params, fee_schedule, min_notional):
         """Price whipsaws at one level - buy fill, sell fill, buy fill..."""
@@ -133,7 +135,7 @@ class TestGridScenarios:
         # TODO: Implement wait-for-full-fill policy (D1) - track cumulative fills
         assert len(place_actions) == 1
         assert place_actions[0].quantity == Decimal("5.0000")
-        assert place_actions[0].level_index == 3
+        assert place_actions[0].level_index == 2
 
     def test_duplicate_fill_idempotent(self, market, params, fee_schedule, min_notional):
         """Duplicate fill event is idempotent."""

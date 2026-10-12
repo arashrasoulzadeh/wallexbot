@@ -343,12 +343,12 @@ class TestStrategyInterface:
             fill_fee=Decimal("0.95"),
             fill_fee_asset="TMN",
         )
-        # Should place sell at level 3 (first sell above gap)
+        # Should place sell on the next level up (level 2, the former gap, price 100)
         place_actions = [a for a in actions if isinstance(a, PlaceAction)]
         assert len(place_actions) == 1
         assert place_actions[0].side == Side.SELL
-        assert place_actions[0].level_index == 3
-        assert place_actions[0].price == Decimal("105.00")
+        assert place_actions[0].level_index == 2
+        assert place_actions[0].price == Decimal("100.00")
 
     def test_strategy_on_stop(self):
         market = Market(

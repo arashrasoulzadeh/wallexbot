@@ -21,6 +21,8 @@ The project is **a broad but unreliable first draft, not a finished Phases 1-17*
 
 ## P0: wrong behavior that loses the grid's purpose
 
+**Status 2026-10-12: items 1-4 below are FIXED** (regression tests in `tests/unit/strategy/grid/test_fill_ladder.py`, 17 tests; suite now 339 passing). Remaining related gap: decision D1 (wait for the full fill before the counter-order) is still NOT implemented; `on_fill` has no notion of partial vs full fills.
+
 1. **Grid fill handling is broken** (`src/wallexbot/strategy/grid/fill_handling.py`, uncommitted "gap-based" rewrite).
    Repro: 9 levels 90..110, price 100, then the three nearest buy levels fill (price drops through them):
    - fill at level 3 -> `cancel sell@5` + `place sell@5` (replaces an existing sell instead of adding a sell next to the filled level, and shrinks its size to the fill quantity);

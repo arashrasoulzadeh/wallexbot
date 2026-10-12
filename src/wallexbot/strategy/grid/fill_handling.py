@@ -41,6 +41,7 @@ class FillResult:
     actions: list[PlaceAction | CancelAction]
     cycle_completed: bool = False
     profit: Decimal = Decimal("0")
+    warning: str = ""
 
 
 Action = PlaceAction | CancelAction
@@ -56,102 +57,74 @@ def handle_fill(
     fee_schedule: FeeSchedule,
     min_notional_rule: MinNotionalRule,
     params: GridParameters,
+    fill_side: str | None = None,
+    fill_fee_asset: str = "",
+    run_id: str = "R",
+    seq: int = 0,
 ) -> FillResult:
     """
-    Handle a fill event and return counter-actions.
+    Handle a full fill of the order sitting on `fill_level`.
 
-    Grid logic (gap-based):
-    - Find the gap level (side == "")
-    - Buy fill at level immediately below gap -> place sell at first sell level above gap
-    - Sell fill at level immediately above gap -> place buy at first buy level below gap
-    - Other fills: no counter-order (cycle completed at boundaries)
-    - Partial fills: counter-order for filled quantity only
+    Ladder rule, local to the filled level (works for any number of fills in a row):
+    - BUY filled at level i  -> place a SELL at level i+1
+    - SELL filled at level i -> place a BUY at level i-1
+
+    Args:
+        fill_side: side of the order that filled ("buy"/"sell"). The static side stored on the
+            level only describes the initial placement, so callers should pass the tracked side.
+        fill_fee_asset: asset the exchange charged the fee in. A BUY fee charged in the base
+            asset is deducted from the quantity we sell back.
+        run_id, seq: make the counter order's client_id unique (Wallex rejects repeats).
+
+    Profit is realized on SELL fills: spacing to the level below times quantity, minus
+    maker fees on both legs. BUY fills realize nothing.
     """
-    # Check if this fill level has an active order
-    if fill_level not in active_orders:
-        # Duplicate or out-of-order fill - ignore
+    if not 0 <= fill_level < len(levels) or fill_level not in active_orders:
+        # Unknown level, duplicate or out-of-order fill: nothing to do.
         return FillResult(actions=[])
 
-    # Get the filled level info
-    level = levels[fill_level]
-    filled_side = level.side  # "buy" or "sell"
+    side = (fill_side or levels[fill_level].side).lower()
+    if side not in ("buy", "sell"):
+        return FillResult(actions=[], warning=f"level {fill_level} has no buy/sell order to answer")
 
-    # Find the gap level (side == "")
-    gap_level_idx = None
-    for idx, lvl in enumerate(levels):
-        if lvl.side == "":
-            gap_level_idx = idx
-            break
-
-    actions: list[Action] = []
-    cycle_completed = False
     profit = Decimal("0")
+    if side == "sell" and fill_level > 0:
+        buy_price = levels[fill_level - 1].price
+        sell_price = levels[fill_level].price
+        gross = (sell_price - buy_price) * fill_qty
+        fees = (buy_price + sell_price) * fill_qty * fee_schedule.maker_rate
+        profit = gross - fees
 
-    if filled_side == "buy":
-        # Buy filled -> place sell at first sell level above gap
-        # Only if this buy level is immediately below the gap
-        if gap_level_idx is not None and fill_level + 1 == gap_level_idx:
-            # Find first sell level above gap
-            next_level_idx = gap_level_idx + 1
-            while next_level_idx < len(levels) and levels[next_level_idx].side != "sell":
-                next_level_idx += 1
-            if next_level_idx < len(levels):
-                # If there's an existing order at the counter level, cancel it first
-                if next_level_idx in active_orders:
-                    actions.append(CancelAction(
-                        type="cancel",
-                        client_id=active_orders[next_level_idx],
-                        level_index=next_level_idx,
-                    ))
-                # Place counter order at next valid level
-                actions.append(_create_counter_order(
-                    level_idx=next_level_idx,
-                    side=Side.SELL,
-                    quantity=fill_qty,
-                    levels=levels,
-                    market=market,
-                    fee_schedule=fee_schedule,
-                    min_notional_rule=min_notional_rule,
-                ))
-            else:
-                cycle_completed = True
-        else:
-            # Not adjacent to gap - no counter order (boundary)
-            cycle_completed = True
+    target = fill_level + 1 if side == "buy" else fill_level - 1
+    if not 0 <= target < len(levels):
+        # Edge of the grid: nothing beyond it to trade against.
+        return FillResult(actions=[], cycle_completed=True, profit=profit)
+    if target in active_orders:
+        return FillResult(
+            actions=[],
+            profit=profit,
+            warning=f"counter level {target} is occupied by {active_orders[target]}",
+        )
 
-    elif filled_side == "sell":
-        # Sell filled -> place buy at first buy level below gap
-        # Only if this sell level is immediately above the gap
-        if gap_level_idx is not None and fill_level - 1 == gap_level_idx:
-            # Find first buy level below gap
-            prev_level_idx = gap_level_idx - 1
-            while prev_level_idx >= 0 and levels[prev_level_idx].side != "buy":
-                prev_level_idx -= 1
-            if prev_level_idx >= 0:
-                # If there's an existing order at the counter level, cancel it first
-                if prev_level_idx in active_orders:
-                    actions.append(CancelAction(
-                        type="cancel",
-                        client_id=active_orders[prev_level_idx],
-                        level_index=prev_level_idx,
-                    ))
-                # Place counter order at prev valid level
-                actions.append(_create_counter_order(
-                    level_idx=prev_level_idx,
-                    side=Side.BUY,
-                    quantity=fill_qty,
-                    levels=levels,
-                    market=market,
-                    fee_schedule=fee_schedule,
-                    min_notional_rule=min_notional_rule,
-                ))
-            else:
-                cycle_completed = True
-        else:
-            # Not adjacent to gap - no counter order (boundary)
-            cycle_completed = True
+    quantity = fill_qty
+    if side == "buy" and fill_fee_asset and fill_fee_asset == market.base:
+        quantity = fill_qty - fill_fee  # fee was taken out of the coins we just bought
 
-    return FillResult(actions=actions, cycle_completed=cycle_completed, profit=profit)
+    counter_side = Side.SELL if side == "buy" else Side.BUY
+    order, warning = _create_counter_order(
+        level_idx=target,
+        side=counter_side,
+        quantity=quantity,
+        levels=levels,
+        market=market,
+        min_notional_rule=min_notional_rule,
+        client_id=f"GRID_{run_id}_{seq}_{target}_{counter_side.value}",
+    )
+    return FillResult(
+        actions=[order] if order else [],
+        profit=profit,
+        warning=warning,
+    )
 
 
 def _create_counter_order(
@@ -160,44 +133,31 @@ def _create_counter_order(
     quantity: Decimal,
     levels: list[Level],
     market: Market,
-    fee_schedule: FeeSchedule,
     min_notional_rule: MinNotionalRule,
-) -> PlaceAction:
-    """Create a counter-order for the given level."""
+    client_id: str,
+) -> tuple[PlaceAction | None, str]:
+    """Build the counter order, or return (None, reason) if it cannot be placed."""
     level = levels[level_idx]
 
-    # Adjust quantity for fees to ensure we don't go negative on base balance
-    # For SELL counter-order after BUY fill: we received `quantity` base, fee was in quote
-    # So we can sell the full `quantity` (minus any fee in base, but buy fee is in quote)
-    # For BUY counter-order after SELL fill: we received quote, paid fee in base
-    # So we have `quantity` base less fee to sell... wait, we're BUYING
-    # Actually: SELL fill gives us quote, costs base fee. We then BUY with quote.
-    # The BUY quantity is limited by quote received minus fee.
-    # But for simplicity and per decision D1 (wait for full fill), we use fill_qty directly.
-    # The fee adjustment is handled by the exchange (locked funds).
-
-    # Validate minimum notional
-    ok, _ = min_notional_rule.validate(level.price, quantity)
-    if not ok:
-        # Quantity too small - don't place order
-        raise ValueError(f"Counter order quantity {quantity} at {level.price} fails min notional")
-
-    # Round quantity to market precision
     step = Decimal("1") / (Decimal("10") ** market.amount_precision)
     qty = quantize_down(quantity, step)
-
     if qty <= 0:
-        raise ValueError("Counter order quantity rounded to zero")
+        return None, f"counter quantity {quantity} rounds to zero"
 
-    client_id = f"GRID_{level_idx}_{side.value}_1"
+    ok, reason = min_notional_rule.validate(level.price, qty)
+    if not ok:
+        return None, f"counter order at level {level_idx} below minimum: {reason}"
 
-    return PlaceAction(
-        type="place",
-        client_id=client_id,
-        symbol=market.symbol,
-        side=side,
-        order_type=OrderType.LIMIT,
-        price=level.price,
-        quantity=qty,
-        level_index=level_idx,
+    return (
+        PlaceAction(
+            type="place",
+            client_id=client_id,
+            symbol=market.symbol,
+            side=side,
+            order_type=OrderType.LIMIT,
+            price=level.price,
+            quantity=qty,
+            level_index=level_idx,
+        ),
+        "",
     )

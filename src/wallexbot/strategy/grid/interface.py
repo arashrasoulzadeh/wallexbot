@@ -8,6 +8,7 @@ from wallexbot.domain.market import Market, Symbol, Side, OrderType
 from wallexbot.strategy.grid.parameters import GridParameters
 from wallexbot.strategy.grid.state import GridState
 from wallexbot.strategy.grid.profit import ProfitTracker
+from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,19 +73,31 @@ class GridStrategy:
         self,
         market: "Market",
         params: GridParameters,
+        fee_schedule: "FeeSchedule | None" = None,
+        min_notional_rule: "MinNotionalRule | None" = None,
+        run_id: str = "R",
     ) -> None:
+        from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+
         self.market = market
         self.params = params
+        # Placeholders until the real Wallex fee / minimum order size are known (TODO D16/D17).
+        self.fee_schedule = fee_schedule or FeeSchedule(
+            maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")
+        )
+        self.min_notional_rule = min_notional_rule or MinNotionalRule(
+            min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
+        )
+        self.run_id = run_id
         self.state: GridState | None = None
         self.profit_tracker = ProfitTracker()
         self._clock = None
+        self._seq = 0
 
     def on_start(self, current_price: Decimal, timestamp: int = 0) -> list[Action]:
         """Initialize grid on start."""
         from wallexbot.strategy.grid.parameters import generate_levels, assign_sides
         from wallexbot.strategy.grid.placement import place_initial_grid
-        from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-
         # Generate levels
         levels = generate_levels(
             lower=self.params.lower_price,
@@ -96,8 +109,8 @@ class GridStrategy:
         levels = assign_sides(levels, current_price)
 
         # Place initial grid
-        fee_schedule = FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002"))
-        min_notional = MinNotionalRule(min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001"))
+        fee_schedule = self.fee_schedule
+        min_notional = self.min_notional_rule
 
         placement = place_initial_grid(
             levels=levels,
@@ -113,7 +126,7 @@ class GridStrategy:
 
         # Populate active orders from initial placement
         for order in placement.orders:
-            self.state.active_orders[order.level_index] = order.client_id
+            self.state.set_active_order(order.level_index, order.client_id, order.side.value.lower())
 
         # Convert placement orders to actions
         actions: list[Action] = []
@@ -160,20 +173,15 @@ class GridStrategy:
         fill_fee_asset: str,
         timestamp: int = 0,
     ) -> list[Action]:
-        """Handle fill event."""
+        """Handle a full fill of the order on `level_index`."""
         from wallexbot.strategy.grid.fill_handling import handle_fill
-        from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 
         if self.state is None:
             return []
 
         actions: list[Action] = []
+        self._seq += 1
 
-        # Get the level info
-        level = self.state.levels[level_index]
-        filled_side = level.side
-
-        # Handle fill
         result = handle_fill(
             fill_level=level_index,
             fill_qty=fill_qty,
@@ -181,15 +189,18 @@ class GridStrategy:
             levels=self.state.levels,
             active_orders=self.state.active_orders,
             market=self.market,
-            fee_schedule=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")),
-            min_notional_rule=MinNotionalRule(min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")),
+            fee_schedule=self.fee_schedule,
+            min_notional_rule=self.min_notional_rule,
             params=self.params,
+            fill_side=self.state.order_sides.get(level_index),
+            fill_fee_asset=fill_fee_asset,
+            run_id=self.run_id,
+            seq=self._seq,
         )
 
-        # Clear the filled order from state
-        self.state.clear_active_order(level_index)
+        if level_index in self.state.active_orders:
+            self.state.clear_active_order(level_index)
 
-        # Convert fill handling actions to strategy actions
         for action in result.actions:
             if action.type == "place":
                 actions.append(PlaceAction(
@@ -202,21 +213,25 @@ class GridStrategy:
                     quantity=action.quantity,
                     level_index=action.level_index,
                 ))
-                # Track new active order
-                self.state.set_active_order(action.level_index, action.client_id)
+                self.state.set_active_order(
+                    action.level_index, action.client_id, action.side.value.lower()
+                )
             elif action.type == "cancel":
                 actions.append(CancelAction(
                     type="cancel",
                     client_id=action.client_id,
                     level_index=action.level_index,
                 ))
-                # Clear the cancelled order from state
                 self.state.clear_active_order(action.level_index)
 
-        # Track cycle completion
-        if result.cycle_completed:
-            # Calculate profit for the cycle
-            # This is simplified - in reality we'd track the buy/sell prices
+        if result.profit != 0:
+            self.profit_tracker.total_cycles += 1
+            self.profit_tracker.total_profit += result.profit
+            self.profit_tracker.cycle_profits.append(result.profit)
+
+        if result.warning:
+            actions.append(AlertAction(type="alert", message=result.warning, severity="warning"))
+        elif result.cycle_completed:
             actions.append(AlertAction(
                 type="alert",
                 message=f"Grid cycle completed at level {level_index}",
