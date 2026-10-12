@@ -7,39 +7,36 @@
 wallexbot paper config/grid.example.yaml
 ```
 
-### Paper Trading (Web UI)
-```bash
-wallexbot ui
-# Open http://127.0.0.1:8080
-```
-
 ### Backtesting
 ```bash
-wallexbot backtest config/grid.example.yaml --from 2024-01-01 --to 2024-01-31
+wallexbot backtest config/grid.example.yaml --from 2026-10-01 --to 2026-10-10 --resolution 15
 ```
+See [backtesting.md](backtesting.md).
+
+### Web UI
+```bash
+wallexbot ui      # http://127.0.0.1:8080
+```
+**Status:** the pages and read endpoints exist, but starting, pausing and killing runs from the UI is
+not connected to the engine yet (the run-control endpoints are placeholders). Use the CLI.
 
 ## Stopping the Bot
 
-### Graceful Shutdown (SIGINT/Ctrl+C)
-1. Stops placing new orders
-2. Waits for pending order confirmations
-3. Cancels all open orders (configurable)
-4. Flushes state to SQLite
-5. Exits
+### Ctrl+C
+Stops the engine, cancels all resting orders (unless `cancel_on_shutdown` is off), prints the final
+summary and exits.
 
-### Kill Switch (Web UI / API)
-Immediately cancels all orders and halts the engine.
+### Kill switch
+Automatic: a risk limit (`risk.max_drawdown`, `risk.daily_loss_limit`) cancels every order and halts
+the run, and says why in the summary. Programmatic: `engine.kill("reason")`. There is no UI button yet.
 
-### Emergency Stop
-If the bot crashes, restart it — it will recover from SQLite.
+## Crash recovery
 
-## Crash Recovery
+**Not implemented.** A run is recorded with `--db` (run, orders, fills, events), but restarting does
+not resume it; a new run starts a fresh grid at the current price. Since paper orders exist only in
+memory, nothing can be left resting on an exchange after a crash.
 
-On restart, the bot:
-1. Loads last run from SQLite
-2. Reconciles open orders by `client_id` with exchange
-3. Replays any missed fills from event log
-4. Resumes grid from recovered state
+See [paper-trading.md](paper-trading.md) for how a paper run behaves.
 
 ## Reading Logs
 

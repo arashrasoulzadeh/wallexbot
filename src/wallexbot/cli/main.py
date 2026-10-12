@@ -423,7 +423,9 @@ def cmd_backtest(
     return 0
 
 
-async def _run_paper(engine: BotEngine, symbol: str, duration: float | None, every: float) -> None:
+async def _run_paper(
+    engine: BotEngine, price_feed: Any, duration: float | None, every: float
+) -> None:
     """Run the engine, printing a status line periodically, until it ends or time is up."""
     task = engine.start()
     elapsed = 0.0
@@ -438,6 +440,9 @@ async def _run_paper(engine: BotEngine, symbol: str, duration: float | None, eve
                 break
     finally:
         await engine.stop()
+        closer = getattr(price_feed, "close", None)
+        if closer is not None:  # same loop the feed ran in: its tasks and queues belong to it
+            await closer()
     if task.done() and not task.cancelled() and task.exception() is not None:
         raise task.exception()  # type: ignore[misc]
 
@@ -471,13 +476,9 @@ def cmd_paper(
     print(f"Paper trading {setup.symbol} on live prices ({feed}). Press Ctrl+C to stop.")
     print("Paper only: orders exist inside the simulator, nothing is sent to Wallex.")
     try:
-        asyncio.run(_run_paper(engine, setup.symbol, duration, status_every))
+        asyncio.run(_run_paper(engine, price_feed, duration, status_every))
     except KeyboardInterrupt:
         print("\nInterrupted, stopping...")
-    finally:
-        closer = getattr(price_feed, "close", None)
-        if closer is not None:
-            asyncio.run(closer())
 
     print(format_engine_status(setup.symbol, engine.status()))
     return 0

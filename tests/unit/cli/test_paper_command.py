@@ -1,5 +1,6 @@
 """`wallexbot paper` runs the engine on a price feed (faked here: no network)."""
 
+import asyncio
 import importlib
 import sqlite3
 from collections.abc import AsyncGenerator
@@ -22,17 +23,21 @@ class ScriptedFeed:
     def __init__(self, prices: list[int]) -> None:
         self.prices = prices
         self.closed = False
+        self.loop: object = None
 
     async def subscribe(self, symbol: Symbol) -> None: ...
     async def unsubscribe(self, symbol: Symbol) -> None: ...
 
     async def ticks(self) -> AsyncGenerator[PriceTick, None]:
+        self.loop = asyncio.get_running_loop()
         for i, p in enumerate(self.prices):
             yield PriceTick(
                 symbol=SYMBOL, price=D(p), timestamp=1_700_000_000_000 + i * 60_000, source="test"
             )
 
     async def close(self) -> None:
+        # Real feeds own tasks/queues bound to the loop they ran in: closing from another loop fails.
+        assert asyncio.get_running_loop() is self.loop, "feed closed on a different event loop"
         self.closed = True
 
 
@@ -71,6 +76,7 @@ def test_paper_run_trades_and_prints_a_summary(run_paper):
     )
     assert cycles > 0
     assert "stopped" in out.lower()
+    assert run_paper.made["feed"].closed  # and on the loop it ran in
 
 
 def test_the_websocket_feed_is_the_default_and_polling_can_be_chosen(run_paper):
