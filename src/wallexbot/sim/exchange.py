@@ -113,32 +113,27 @@ class SimulatedExchange:
                 f"Order quantity {request.quantity} below minimum {self.min_notional_rule.min_quantity}"
             )
 
+        if request.type in (OrderType.MARKET, OrderType.STOP_MARKET):
+            raise ValueError("market orders are not supported by the simulator yet")
+
         # Check stop price for STOP_* orders
         if request.type in (OrderType.STOP_LIMIT, OrderType.STOP_MARKET):
             if request.stop_price is None:
                 raise ValueError(f"{request.type} order requires stop_price")
 
+    def _balance(self, asset: str) -> Balance:
+        return self._balances.get(asset, Balance(free=Decimal("0"), locked=Decimal("0")))
+
     def _lock_funds(self, request: OrderRequest) -> None:
-        """Lock funds for order."""
+        """Lock the funds an order needs. Fees are taken from what is received, so nothing extra
+        is locked: BUY locks price * quantity of quote, SELL locks quantity of base."""
+        if request.price is None:
+            raise ValueError("market orders are not supported by the simulator yet")
         if request.side == Side.BUY:
-            # Lock quote currency
-            required = request.price * request.quantity if request.price else Decimal("0")
-            # Add estimated fee
-            fee = self._fee_schedule.calculate_fee_quote(required, is_maker=True)
-            total = required + fee
-            quote_asset = self.market.quote
-            if quote_asset not in self._balances:
-                self._balances[quote_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
-            self._balances[quote_asset] = self._balances[quote_asset].lock(total)
+            asset, amount = self.market.quote, request.price * request.quantity
         else:
-            # Lock base currency
-            base_asset = self.market.base
-            if base_asset not in self._balances:
-                self._balances[base_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
-            # Add estimated fee in base
-            fee = self._fee_schedule.calculate_fee_base(request.quantity, is_maker=True)
-            total = request.quantity + fee
-            self._balances[base_asset] = self._balances[base_asset].lock(total)
+            asset, amount = self.market.base, request.quantity
+        self._balances[asset] = self._balance(asset).lock(amount)
 
     @staticmethod
     def _limit_price(order: Order) -> Decimal:
@@ -148,19 +143,13 @@ class SimulatedExchange:
         return order.price
 
     def _unlock_funds(self, order: Order) -> None:
-        """Unlock funds for canceled order."""
+        """Release what is still locked for the unfilled part of a cancelled order."""
+        remaining = order.remaining_quantity
         if order.side == Side.BUY:
-            quote_asset = self.market.quote
-            locked_value = self._limit_price(order) * order.remaining_quantity
-            fee = self._fee_schedule.calculate_fee_quote(locked_value, is_maker=True)
-            total = locked_value + fee
-            self._balances[quote_asset] = self._balances[quote_asset].unlock(total)
+            asset, amount = self.market.quote, self._limit_price(order) * remaining
         else:
-            base_asset = self.market.base
-            locked_qty = order.remaining_quantity
-            fee = self._fee_schedule.calculate_fee_base(locked_qty, is_maker=True)
-            total = locked_qty + fee
-            self._balances[base_asset] = self._balances[base_asset].unlock(total)
+            asset, amount = self.market.base, remaining
+        self._balances[asset] = self._balance(asset).unlock(amount)
 
     def place_order(self, request: OrderRequest) -> Order:
         """Place a new order."""
@@ -192,7 +181,7 @@ class SimulatedExchange:
             status=OrderStatus.NEW,
             filled_quantity=Decimal("0"),
             fee=Decimal("0"),
-            fee_asset=self.market.quote if request.side == Side.BUY else self.market.base,
+            fee_asset=self.market.base if request.side == Side.BUY else self.market.quote,
             is_maker=(request.type == OrderType.LIMIT),
             created_at=now,
             updated_at=now,
@@ -264,68 +253,22 @@ class SimulatedExchange:
             if order:
                 self._apply_fill(fill, order)
 
-        # Check stop triggers
-        triggered = self._matching_engine.check_stop_triggers(price)
-        for order in triggered:
-            # Re-lock funds for the now-active order
-            self._lock_funds_for_active_order(order)
+        # Stop-limit orders were fully funded when placed; triggering just activates them.
+        self._matching_engine.check_stop_triggers(price)
 
         return fills
 
     def _apply_fill(self, fill: Fill, order: Order) -> None:
-        """Apply fill to balances."""
+        """Settle a fill: spend the locked funds exactly, credit what was received minus the fee
+        (charged in the received asset, as Wallex does)."""
+        base, quote = self.market.base, self.market.quote
+        value = fill.price * fill.quantity
         if order.side == Side.BUY:
-            # Received base, paid quote (already locked)
-            # Unlock remaining quote
-            remaining_quote = self._limit_price(order) * order.remaining_quantity
-            fee = self._fee_schedule.calculate_fee_quote(remaining_quote, is_maker=True)
-            total_locked = remaining_quote + fee
-            self._balances[self.market.quote] = self._balances[self.market.quote].unlock(
-                total_locked
-            )
-
-            # Add base to free
-            base_asset = self.market.base
-            if base_asset not in self._balances:
-                self._balances[base_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
-            self._balances[base_asset] = self._balances[base_asset].add(fill.quantity)
-
-            # Deduct fee from quote (already accounted in unlock)
+            self._balances[quote] = self._balance(quote).unlock(value).subtract(value)
+            self._balances[base] = self._balance(base).add(fill.quantity - fill.fee)
         else:
-            # Received quote, paid base (already locked)
-            # Unlock remaining base
-            remaining_base = order.remaining_quantity
-            fee = self._fee_schedule.calculate_fee_base(remaining_base, is_maker=True)
-            total_locked = remaining_base + fee
-            self._balances[self.market.base] = self._balances[self.market.base].unlock(total_locked)
-
-            # Add quote to free
-            quote_value = fill.price * fill.quantity
-            quote_asset = self.market.quote
-            if quote_asset not in self._balances:
-                self._balances[quote_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
-            self._balances[quote_asset] = self._balances[quote_asset].add(quote_value)
-
-            # Deduct fee from base (already accounted in unlock)
-
-    def _lock_funds_for_active_order(self, order: Order) -> None:
-        """Lock funds for an activated stop order."""
-        # Similar to _lock_funds but for already-created order
-        if order.side == Side.BUY:
-            required = self._limit_price(order) * order.quantity
-            fee = self._fee_schedule.calculate_fee_quote(required, is_maker=True)
-            total = required + fee
-            quote_asset = self.market.quote
-            if quote_asset not in self._balances:
-                self._balances[quote_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
-            self._balances[quote_asset] = self._balances[quote_asset].lock(total)
-        else:
-            base_asset = self.market.base
-            if base_asset not in self._balances:
-                self._balances[base_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
-            fee = self._fee_schedule.calculate_fee_base(order.quantity, is_maker=True)
-            total = order.quantity + fee
-            self._balances[base_asset] = self._balances[base_asset].lock(total)
+            self._balances[base] = self._balance(base).unlock(fill.quantity).subtract(fill.quantity)
+            self._balances[quote] = self._balance(quote).add(value - fill.fee)
 
     # Event stream for Phase 5.9
     def event_stream(self) -> None:

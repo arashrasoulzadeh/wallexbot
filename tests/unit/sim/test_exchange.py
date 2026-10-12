@@ -78,10 +78,10 @@ class TestSimulatedExchange:
 
         assert order.status == OrderStatus.NEW
         assert order.side == Side.BUY
-        # Quote locked: 100 * 10 = 1000 TMN + fee (1000 * 0.001 = 1) = 1001 TMN
+        # Quote locked: 100 * 10 = 1000 TMN. The fee is taken from what is received, so none is locked.
         balances = exchange.balances()
-        assert balances["TMN"].locked == Decimal("1001.00000000")
-        assert balances["TMN"].free == Decimal("1998999.00000000")
+        assert balances["TMN"].locked == Decimal("1000")
+        assert balances["TMN"].free == Decimal("1999000")
 
     def test_place_sell_order_locks_base(self, exchange):
         """SELL order locks base currency."""
@@ -100,10 +100,10 @@ class TestSimulatedExchange:
 
         assert order.status == OrderStatus.NEW
         assert order.side == Side.SELL
-        # Base locked: 10 USDT + fee (10 * 0.001 = 0.01) = 10.01 USDT
+        # Base locked: exactly the 10 USDT being sold (fee comes out of the quote proceeds)
         balances = exchange.balances()
-        assert balances["USDT"].locked == Decimal("10.01000000")
-        assert balances["USDT"].free == Decimal("89.99000000")
+        assert balances["USDT"].locked == Decimal("10")
+        assert balances["USDT"].free == Decimal("90")
 
     def test_insufficient_funds_rejected(self, exchange):
         """Insufficient funds -> rejection."""
@@ -129,7 +129,7 @@ class TestSimulatedExchange:
             quantity=Decimal("10.0000"),
         )
         order = exchange.place_order(request)
-        assert exchange.balances()["TMN"].locked == Decimal("1001.00000000")
+        assert exchange.balances()["TMN"].locked == Decimal("1000")
 
         exchange.cancel_order(order.id)
         assert exchange.balances()["TMN"].locked == Decimal("0")
@@ -478,10 +478,11 @@ class TestMatchingEngine:
         fills = engine.process_trade(Decimal("99.00"), Decimal("5.0000"), 1001)
         assert len(fills) == 1
         fill = fills[0]
-        # Buy is maker, fee in quote: 100 * 5 * 0.001 = 0.5 TMN
-        # Wait, fill price is 99, so fee = 99 * 5 * 0.001 = 0.495
-        assert fill.fee == Decimal("0.495")
-        assert fill.fee_asset == "TMN"
+        # A resting buy fills at ITS price (100), and the fee is charged in the asset received:
+        # 5 USDT * 0.001 maker rate = 0.005 USDT.
+        assert fill.price == Decimal("100.00")
+        assert fill.fee == Decimal("0.005")
+        assert fill.fee_asset == "USDT"
         assert fill.is_maker is True
 
 

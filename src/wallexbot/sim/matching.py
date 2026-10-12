@@ -229,19 +229,21 @@ class MatchingEngine:
         if fill_qty <= 0:
             return fills
 
-        # Calculate fee
+        # A resting limit order fills at its own price; the fee is charged in the asset received.
+        fill_price = order.price if order.price is not None else price
+        rate = self.fee_schedule.maker_rate if is_maker else self.fee_schedule.taker_rate
         if order.side == Side.BUY:
-            fee_asset = order.fee_asset  # Quote asset
-            fee = self.fee_schedule.calculate_fee(price, fill_qty, Side.BUY, is_maker)
+            fee_asset = self.market.base
+            fee = (fill_qty * rate).quantize(Decimal("0.00000001"))
         else:
-            fee_asset = order.fee_asset  # Base asset
-            fee = self.fee_schedule.calculate_fee(price, fill_qty, Side.SELL, is_maker)
+            fee_asset = self.market.quote
+            fee = (fill_price * fill_qty * rate).quantize(Decimal("0.00000001"))
 
         # Create fill
         fill = Fill(
             order_id=order.id,
             trade_id=f"trade_{self._order_sequence}",
-            price=price,
+            price=fill_price,
             quantity=fill_qty,
             fee=fee,
             fee_asset=fee_asset,
