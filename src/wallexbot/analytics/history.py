@@ -4,6 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 
 @dataclass
@@ -256,7 +257,7 @@ class HistoryRepository:
             )
 
     # Candles
-    def record_candle(self, market: str, resolution: str, candle: dict) -> None:
+    def record_candle(self, market: str, resolution: str, candle: dict[str, Any]) -> None:
         with self._transaction() as cursor:
             cursor.execute(
                 """
@@ -288,7 +289,7 @@ class HistoryRepository:
         return [dict(row) for row in cursor.fetchall()]
 
     # Orders
-    def record_order(self, run_id: str, order: dict) -> None:
+    def record_order(self, run_id: str, order: dict[str, Any]) -> None:
         with self._transaction() as cursor:
             cursor.execute(
                 """
@@ -337,7 +338,7 @@ class HistoryRepository:
             )
 
     # Fills
-    def record_fill(self, run_id: str, fill: dict) -> int:
+    def record_fill(self, run_id: str, fill: dict[str, Any]) -> int:
         dedupe_key = f"{run_id}:{fill['order_id']}:{fill['price']}:{fill['qty']}:{fill['ts']}"
         with self._transaction() as cursor:
             cursor.execute(
@@ -463,7 +464,7 @@ class HistoryRepository:
         )
         return [dict(row) for row in cursor.fetchall()]
 
-    def get_profit_breakdown(self, run_id: str) -> dict:
+    def get_profit_breakdown(self, run_id: str) -> dict[str, Any]:
         """Get profit breakdown by day/week/month/level/cycle."""
         cursor = self._conn.cursor()
 
@@ -504,7 +505,7 @@ class HistoryRepository:
         )
         return [dict(row) for row in cursor.fetchall()]
 
-    def get_trade_stats(self, run_id: str) -> dict:
+    def get_trade_stats(self, run_id: str) -> dict[str, Any]:
         """Get trade statistics."""
         cursor = self._conn.cursor()
         cursor.execute(
@@ -517,7 +518,7 @@ class HistoryRepository:
         row = cursor.fetchone()
         return dict(row) if row else {}
 
-    def reconstruct_state_at(self, run_id: str, ts: int) -> dict:
+    def reconstruct_state_at(self, run_id: str, ts: int) -> dict[str, Any]:
         """Reconstruct grid state at timestamp."""
         # Get orders at that time
         cursor = self._conn.cursor()

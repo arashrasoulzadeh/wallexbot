@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +21,7 @@ class EngineManager:
 
     def __init__(self, repo: Repository) -> None:
         self.repo = repo
-        self._running: dict[str, dict] = {}  # run_id -> {engine, config, task}
+        self._running: dict[str, dict[str, Any]] = {}  # run_id -> {engine, config, task}
 
     async def start_backtest(self, config: Config, from_ts: int, to_ts: int) -> str:
         """Start a backtest."""
@@ -182,12 +183,12 @@ def create_app(
 
     # Config validation
     class ConfigValidateRequest(BaseModel):
-        exchange: dict
-        market: dict
-        strategy: dict
-        risk: dict
-        simulation: dict
-        logging: dict
+        exchange: dict[str, Any]
+        market: dict[str, Any]
+        strategy: dict[str, Any]
+        risk: dict[str, Any]
+        simulation: dict[str, Any]
+        logging: dict[str, Any]
 
     @app.post("/api/config/validate")
     async def validate_config_endpoint(request: ConfigValidateRequest):
@@ -218,7 +219,7 @@ def create_app(
 
     # Backtest
     class BacktestRequest(BaseModel):
-        config: dict
+        config: dict[str, Any]
         from_ts: int
         to_ts: int
 
@@ -237,7 +238,7 @@ def create_app(
 
     # Paper runs
     class PaperRunRequest(BaseModel):
-        config: dict
+        config: dict[str, Any]
 
     @app.post("/api/paper-runs")
     async def start_paper_run(request: PaperRunRequest):

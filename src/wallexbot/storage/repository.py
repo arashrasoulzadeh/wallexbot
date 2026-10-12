@@ -4,6 +4,7 @@ import json
 import sqlite3
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from typing import Any
 
 from wallexbot.storage.migrations import run_migrations
 
@@ -12,10 +13,10 @@ class Repository(ABC):
     """Repository interface for persistence."""
 
     @abstractmethod
-    def create_run(self, name: str, config: dict) -> str: ...
+    def create_run(self, name: str, config: dict[str, Any]) -> str: ...
 
     @abstractmethod
-    def get_run(self, run_id: str) -> dict | None: ...
+    def get_run(self, run_id: str) -> dict[str, Any] | None: ...
 
     @abstractmethod
     def list_runs(self) -> list[dict]: ...
@@ -24,34 +25,34 @@ class Repository(ABC):
     def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None: ...
 
     @abstractmethod
-    def save_order(self, run_id: str, order: dict) -> str: ...
+    def save_order(self, run_id: str, order: dict[str, Any]) -> str: ...
 
     @abstractmethod
-    def get_order(self, run_id: str, order_id: str) -> dict | None: ...
+    def get_order(self, run_id: str, order_id: str) -> dict[str, Any] | None: ...
 
     @abstractmethod
-    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict | None: ...
+    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict[str, Any] | None: ...
 
     @abstractmethod
-    def update_order(self, order_id: str, updates: dict) -> None: ...
+    def update_order(self, order_id: str, updates: dict[str, Any]) -> None: ...
 
     @abstractmethod
     def get_open_orders(self, run_id: str) -> list[dict]: ...
 
     @abstractmethod
-    def save_fill(self, run_id: str, fill: dict) -> int: ...
+    def save_fill(self, run_id: str, fill: dict[str, Any]) -> int: ...
 
     @abstractmethod
     def get_fills(self, run_id: str, order_id: str = None) -> list[dict]: ...
 
     @abstractmethod
-    def save_grid_state(self, run_id: str, state: dict) -> None: ...
+    def save_grid_state(self, run_id: str, state: dict[str, Any]) -> None: ...
 
     @abstractmethod
-    def get_grid_state(self, run_id: str) -> dict | None: ...
+    def get_grid_state(self, run_id: str) -> dict[str, Any] | None: ...
 
     @abstractmethod
-    def save_event(self, run_id: str, event: dict) -> int: ...
+    def save_event(self, run_id: str, event: dict[str, Any]) -> int: ...
 
     @abstractmethod
     def get_events(self, run_id: str) -> list[dict]: ...
@@ -70,7 +71,7 @@ class InMemoryRepository(Repository):
         self._fill_counter = 0
         self._event_counter = 0
 
-    def create_run(self, name: str, config: dict) -> str:
+    def create_run(self, name: str, config: dict[str, Any]) -> str:
         self._run_counter += 1
         run_id = f"run_{self._run_counter}"
         import time
@@ -85,7 +86,7 @@ class InMemoryRepository(Repository):
         }
         return run_id
 
-    def get_run(self, run_id: str) -> dict | None:
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
         return self._runs.get(run_id)
 
     def list_runs(self) -> list[dict]:
@@ -97,22 +98,22 @@ class InMemoryRepository(Repository):
             if stopped_at:
                 self._runs[run_id]["stopped_at"] = stopped_at
 
-    def save_order(self, run_id: str, order: dict) -> str:
+    def save_order(self, run_id: str, order: dict[str, Any]) -> str:
         order_id = order.get("id", f"ord_{len(self._orders) + 1}")
         key = (run_id, order_id)
         self._orders[key] = {**order, "id": order_id, "run_id": run_id}
         return order_id
 
-    def get_order(self, run_id: str, order_id: str) -> dict | None:
+    def get_order(self, run_id: str, order_id: str) -> dict[str, Any] | None:
         return self._orders.get((run_id, order_id))
 
-    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict | None:
+    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict[str, Any] | None:
         for order in self._orders.values():
             if order["run_id"] == run_id and order["client_id"] == client_id:
                 return order
         return None
 
-    def update_order(self, order_id: str, updates: dict) -> None:
+    def update_order(self, order_id: str, updates: dict[str, Any]) -> None:
         for key, order in self._orders.items():
             if order["id"] == order_id:
                 self._orders[key].update(updates)
@@ -125,7 +126,7 @@ class InMemoryRepository(Repository):
             if o["run_id"] == run_id and o["status"] in ("NEW", "PARTIALLY_FILLED")
         ]
 
-    def save_fill(self, run_id: str, fill: dict) -> int:
+    def save_fill(self, run_id: str, fill: dict[str, Any]) -> int:
         self._fill_counter += 1
         fill_id = self._fill_counter
         key = (run_id, fill_id)
@@ -138,15 +139,15 @@ class InMemoryRepository(Repository):
             fills = [f for f in fills if f["order_id"] == order_id]
         return fills
 
-    def save_grid_state(self, run_id: str, state: dict) -> None:
+    def save_grid_state(self, run_id: str, state: dict[str, Any]) -> None:
         import time
 
         self._grid_states[run_id] = {**state, "updated_at": int(time.time() * 1000)}
 
-    def get_grid_state(self, run_id: str) -> dict | None:
+    def get_grid_state(self, run_id: str) -> dict[str, Any] | None:
         return self._grid_states.get(run_id)
 
-    def save_event(self, run_id: str, event: dict) -> int:
+    def save_event(self, run_id: str, event: dict[str, Any]) -> int:
         self._event_counter += 1
         event_id = self._event_counter
         import time
@@ -184,7 +185,7 @@ class SQLiteRepository(Repository):
             self._conn.rollback()
             raise
 
-    def create_run(self, name: str, config: dict) -> str:
+    def create_run(self, name: str, config: dict[str, Any]) -> str:
         import hashlib
         import time
 
@@ -210,7 +211,7 @@ class SQLiteRepository(Repository):
             )
         return run_id
 
-    def get_run(self, run_id: str) -> dict | None:
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
         cursor = self._conn.cursor()
         cursor.execute("SELECT * FROM runs WHERE id = ?", (run_id,))
         row = cursor.fetchone()
@@ -233,7 +234,7 @@ class SQLiteRepository(Repository):
             else:
                 cursor.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
 
-    def save_order(self, run_id: str, order: dict) -> str:
+    def save_order(self, run_id: str, order: dict[str, Any]) -> str:
         order_id = order.get("id", f"ord_{order.get('client_id', 'unknown')}")
 
         with self._transaction() as cursor:
@@ -265,13 +266,13 @@ class SQLiteRepository(Repository):
             )
         return order_id
 
-    def get_order(self, run_id: str, order_id: str) -> dict | None:
+    def get_order(self, run_id: str, order_id: str) -> dict[str, Any] | None:
         cursor = self._conn.cursor()
         cursor.execute("SELECT * FROM orders WHERE run_id = ? AND id = ?", (run_id, order_id))
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict | None:
+    def get_order_by_client_id(self, run_id: str, client_id: str) -> dict[str, Any] | None:
         cursor = self._conn.cursor()
         cursor.execute(
             "SELECT * FROM orders WHERE run_id = ? AND client_id = ?", (run_id, client_id)
@@ -279,7 +280,7 @@ class SQLiteRepository(Repository):
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def update_order(self, order_id: str, updates: dict) -> None:
+    def update_order(self, order_id: str, updates: dict[str, Any]) -> None:
         set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
         values = list(updates.values()) + [order_id]
 
@@ -297,7 +298,7 @@ class SQLiteRepository(Repository):
         )
         return [dict(row) for row in cursor.fetchall()]
 
-    def save_fill(self, run_id: str, fill: dict) -> int:
+    def save_fill(self, run_id: str, fill: dict[str, Any]) -> int:
         # Generate dedupe key
         dedupe_key = (
             f"{run_id}:{fill['order_id']}:{fill['price']}:{fill['quantity']}:{fill['timestamp']}"
@@ -336,7 +337,7 @@ class SQLiteRepository(Repository):
             cursor.execute("SELECT * FROM fills WHERE run_id = ?", (run_id,))
         return [dict(row) for row in cursor.fetchall()]
 
-    def save_grid_state(self, run_id: str, state: dict) -> None:
+    def save_grid_state(self, run_id: str, state: dict[str, Any]) -> None:
         import json
         import time
 
@@ -351,7 +352,7 @@ class SQLiteRepository(Repository):
                 (run_id, levels_json, int(time.time() * 1000)),
             )
 
-    def get_grid_state(self, run_id: str) -> dict | None:
+    def get_grid_state(self, run_id: str) -> dict[str, Any] | None:
         cursor = self._conn.cursor()
         cursor.execute("SELECT * FROM grid_state WHERE run_id = ?", (run_id,))
         row = cursor.fetchone()
@@ -361,7 +362,7 @@ class SQLiteRepository(Repository):
             return {"levels": json.loads(row["levels_json"]), "updated_at": row["updated_at"]}
         return None
 
-    def save_event(self, run_id: str, event: dict) -> int:
+    def save_event(self, run_id: str, event: dict[str, Any]) -> int:
         import time
 
         with self._transaction() as cursor:

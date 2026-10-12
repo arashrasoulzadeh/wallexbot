@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from wallexbot.domain import Clock
 
@@ -53,7 +54,7 @@ class TelegramNotifier:
         """Queue a message for sending."""
         await self._queue.put({"message": message, "severity": severity})
 
-    async def send_alert(self, event_type: str, data: dict, lang: str = "en") -> None:
+    async def send_alert(self, event_type: str, data: dict[str, Any], lang: str = "en") -> None:
         """Send a formatted alert."""
         if lang == "fa":
             message = format_alert_fa(event_type, data)
@@ -115,7 +116,7 @@ class TelegramNotifier:
             logger.warning(f"Telegram API error: {response.status_code} {response.text}")
 
 
-def format_alert_en(event_type: str, data: dict) -> str:
+def format_alert_en(event_type: str, data: dict[str, Any]) -> str:
     """Format alert message in English."""
     templates = {
         "out_of_range": "⚠️ Price out of range: {price} (range: {lower}-{upper})",
@@ -129,7 +130,7 @@ def format_alert_en(event_type: str, data: dict) -> str:
     return template.format(**data)
 
 
-def format_alert_fa(event_type: str, data: dict) -> str:
+def format_alert_fa(event_type: str, data: dict[str, Any]) -> str:
     """Format alert message in Persian."""
     templates = {
         "out_of_range": "⚠️ قیمت خارج از محدوده: {price} (محدوده: {lower}-{upper})",

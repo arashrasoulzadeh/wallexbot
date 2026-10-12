@@ -2,7 +2,7 @@
 
 import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -46,7 +46,7 @@ class WallexRestClient:
             raise RuntimeError("No transport available")
         return self.transport.request(method, url, **kwargs)
 
-    def _handle_response(self, response: httpx.Response) -> dict:
+    def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
         """Handle API response envelope."""
         data = response.json()
 

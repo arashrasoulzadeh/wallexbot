@@ -20,7 +20,7 @@ class HistoricalDataStore:
 
     def save_candles(self, symbol: Symbol, candles: list[Candle]) -> None:
         """Save candles to CSV file."""
-        file_path = self.data_dir / f"{symbol.value}_candles.csv"
+        file_path = self.data_dir / f"{str(symbol)}_candles.csv"
         with open(file_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["timestamp", "open", "high", "low", "close", "volume"])
@@ -38,7 +38,7 @@ class HistoricalDataStore:
 
     def load_candles(self, symbol: Symbol, resolution: str) -> list[Candle]:
         """Load candles from CSV file."""
-        file_path = self.data_dir / f"{symbol.value}_candles.csv"
+        file_path = self.data_dir / f"{str(symbol)}_candles.csv"
         if not file_path.exists():
             return []
 
@@ -62,4 +62,4 @@ class HistoricalDataStore:
 
     def get_candle_path(self, symbol: Symbol) -> Path:
         """Get path for symbol candles."""
-        return self.data_dir / f"{symbol.value}_candles.csv"
+        return self.data_dir / f"{str(symbol)}_candles.csv"

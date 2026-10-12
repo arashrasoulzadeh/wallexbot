@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Any
 
 from wallexbot.domain.market import Side
 from wallexbot.sim.exchange import SimulatedExchange
@@ -33,7 +34,7 @@ class BacktestResult:
     """Backtest result."""
 
     metrics: BacktestMetrics
-    config_snapshot: dict
+    config_snapshot: dict[str, Any]
     start_time: int
     end_time: int
 

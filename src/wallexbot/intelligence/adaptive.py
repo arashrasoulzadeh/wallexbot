@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+from typing import Any
 
 from wallexbot.intelligence.indicators import calculate_atr, calculate_donchian, detect_regime
 from wallexbot.strategy.grid.parameters import GridParameters
@@ -27,7 +28,7 @@ class AdaptiveDecision:
     action: AdaptiveAction
     reason: str
     confidence: Decimal
-    params: dict = None
+    params: dict[str, Any] = None
 
 
 def recenter_grid(

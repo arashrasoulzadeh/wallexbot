@@ -3,8 +3,10 @@
 import random
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
-from wallexbot.analytics.backtest import Backtester, BacktestResult
+from wallexbot.analytics.backtest import Backtester, BacktestMetrics, BacktestResult
+from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, Symbol
 from wallexbot.sim.exchange import SimulatedExchange
@@ -18,14 +20,14 @@ class OptimizationResult:
     """Result of parameter optimization."""
 
     params: GridParameters
-    metrics: dict
+    metrics: BacktestMetrics
     score: Decimal
 
 
 def grid_search_optimizer(
-    param_grid: dict,
-    candles: list,
-    base_config: dict,
+    param_grid: dict[str, Any],
+    candles: list[Any],
+    base_config: dict[str, Any],
     objective: str = "risk_adjusted_return",
     max_workers: int = 4,
 ) -> list[OptimizationResult]:
@@ -74,9 +76,9 @@ def grid_search_optimizer(
 
 
 def random_search_optimizer(
-    param_ranges: dict,
-    candles: list,
-    base_config: dict,
+    param_ranges: dict[str, Any],
+    candles: list[Any],
+    base_config: dict[str, Any],
     n_iterations: int = 100,
     objective: str = "risk_adjusted_return",
     max_workers: int = 4,
@@ -135,9 +137,9 @@ def random_search_optimizer(
 
 
 def walk_forward_validation(
-    param_ranges: dict,
-    candles: list,
-    base_config: dict,
+    param_ranges: dict[str, Any],
+    candles: list[Any],
+    base_config: dict[str, Any],
     train_window: int = 500,
     test_window: int = 100,
     step: int = 50,
@@ -197,11 +199,11 @@ def walk_forward_validation(
 
 def monte_carlo_simulation(
     params: GridParameters,
-    candles: list,
-    base_config: dict,
+    candles: list[Any],
+    base_config: dict[str, Any],
     n_simulations: int = 1000,
     block_size: int = 20,
-) -> dict:
+) -> dict[str, Any]:
     """
     Monte Carlo robustness test.
 
@@ -280,8 +282,8 @@ def monte_carlo_simulation(
 
 def _run_single_backtest(
     params: GridParameters,
-    candles: list,
-    base_config: dict,
+    candles: list[Any],
+    base_config: dict[str, Any],
 ) -> BacktestResult | None:
     """Run a single backtest with given parameters."""
     try:
@@ -298,13 +300,21 @@ def _run_single_backtest(
 
         exchange = SimulatedExchange(
             market=market,
-            fee_schedule=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")),
+            fee_schedule_config=FeeSchedule(
+                maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")
+            ),
             min_notional_rule=MinNotionalRule(
                 min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
             ),
             initial_balances={
-                "TMN": base_config.get("initial_balance_quote", Decimal("2000000.00")),
-                "USDT": base_config.get("initial_balance_base", Decimal("0")),
+                "TMN": Balance(
+                    free=base_config.get("initial_balance_quote", Decimal("2000000.00")),
+                    locked=Decimal("0"),
+                ),
+                "USDT": Balance(
+                    free=base_config.get("initial_balance_base", Decimal("0")),
+                    locked=Decimal("0"),
+                ),
             },
         )
 
@@ -330,7 +340,9 @@ def _run_single_backtest(
 
         return backtester.run()
 
-    except Exception:
+    except ValueError:
+        # Invalid parameter combination (e.g. orders below the minimum size): skip it.
+        # Anything else is a bug and must surface, not be swallowed.
         return None
 
 

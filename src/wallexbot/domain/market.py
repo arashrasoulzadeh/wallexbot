@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
-from typing import Self
+from typing import Any, Self
 
 from wallexbot.domain.money import quantize_down
 
@@ -68,7 +68,7 @@ class Market:
     is_spot: bool
 
     @classmethod
-    def from_api_response(cls, data: dict) -> Self:
+    def from_api_response(cls, data: dict[str, Any]) -> Self:
         """Create Market from Wallex API response."""
         symbol = Symbol(data["symbol"])
         base = data["baseAsset"]

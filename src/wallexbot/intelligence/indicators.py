@@ -1,6 +1,7 @@
 """Technical indicators for market analysis."""
 
 from decimal import Decimal
+from typing import Any
 
 from wallexbot.wallex.models import Candle
 
@@ -226,7 +227,7 @@ def calculate_percentile_in_range(candles: list[Candle], period: int = 20) -> De
     return max(Decimal("0"), min(Decimal("100"), percentile))
 
 
-def check_liquidity(depth: dict, min_spread_bps: int = 5) -> tuple[bool, str]:
+def check_liquidity(depth: dict[str, Any], min_spread_bps: int = 5) -> tuple[bool, str]:
     """
     Check if market has sufficient liquidity.
 

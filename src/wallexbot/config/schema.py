@@ -237,7 +237,7 @@ class Config(BaseModel):
                 )
 
 
-def validate_config(data: dict, env_overrides: bool = False) -> Config:
+def validate_config(data: dict[str, Any], env_overrides: bool = False) -> Config:
     """
     Validate configuration dictionary.
 
@@ -261,7 +261,7 @@ def validate_config(data: dict, env_overrides: bool = False) -> Config:
     return Config.model_validate(data)
 
 
-def _apply_env_overrides(data: dict) -> dict:
+def _apply_env_overrides(data: dict[str, Any]) -> dict:
     """Apply environment variable overrides to config."""
     import os
 
@@ -289,7 +289,7 @@ def _apply_env_overrides(data: dict) -> dict:
     return result
 
 
-def _set_nested(d: dict, path: tuple, value: Any) -> None:
+def _set_nested(d: dict[str, Any], path: tuple[Any, ...], value: Any) -> None:
     """Set nested dictionary value."""
     current = d
     for key in path[:-1]:
@@ -299,7 +299,7 @@ def _set_nested(d: dict, path: tuple, value: Any) -> None:
     current[path[-1]] = value
 
 
-def _check_forbidden_keys(data: dict, prefix: str = "") -> None:
+def _check_forbidden_keys(data: dict[str, Any], prefix: str = "") -> None:
     """Recursively check for forbidden keys (api_key, secret, etc.)."""
     forbidden = {"api_key", "secret", "apikey", "api_secret", "private_key", "password"}
 

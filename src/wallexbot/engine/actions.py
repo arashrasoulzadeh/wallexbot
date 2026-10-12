@@ -2,6 +2,7 @@
 
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from wallexbot.domain import Clock
 from wallexbot.domain.order import OrderRequest
@@ -32,7 +33,7 @@ class ActionExecutor:
         self._client_id_counter += 1
         return f"GRID_{self._run_id}_{level_index}_{seq}"
 
-    def execute(self, action: Action) -> list:
+    def execute(self, action: Action) -> list[Any]:
         """Execute a strategy action."""
         if isinstance(action, PlaceAction):
             return [self.execute_place(action)]
