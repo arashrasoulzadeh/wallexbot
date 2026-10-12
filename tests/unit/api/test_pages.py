@@ -28,6 +28,7 @@ PAGES = {
     "/runs": "runs.title",
     "/history": "hist.title",
     "/market": "mk.title",
+    "/markets": "mkts.title",
     "/settings": "na.title",
 }
 
@@ -121,7 +122,16 @@ def test_every_translation_key_used_by_the_pages_exists(i18n):
     }
     used |= {
         f"nav.{p}"
-        for p in ("dashboard", "configure", "backtest", "paper", "market", "history", "runs")
+        for p in (
+            "dashboard",
+            "configure",
+            "backtest",
+            "paper",
+            "market",
+            "markets",
+            "history",
+            "runs",
+        )
     }
     missing = sorted(k for k in used if k not in i18n["en"])
     assert not missing, f"keys used but not translated: {missing}"

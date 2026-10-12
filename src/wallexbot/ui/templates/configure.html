@@ -22,6 +22,7 @@
         <div><label for="daily_loss_limit" data-i18n="cfg.dailyLoss">Daily loss limit</label><input id="daily_loss_limit" inputmode="decimal"></div>
     </form>
     <div class="note" data-i18n="cfg.feeNote"></div>
+    <div id="defaults-note"></div>
     <div id="result"></div>
     <div class="actions">
         <button id="save" type="button" data-i18n="common.save">Save configuration</button>
@@ -116,8 +117,29 @@ wb.ready.then(async function () {
         markets.forEach(function (m) { list.appendChild(wb.el('option', { value: m.symbol })); });
     }).catch(function () { /* offline: free text */ });
 
+    // choosing a coin loads a starting grid sized for it (the user still reviews and saves)
+    async function loadDefaults(symbol) {
+        const note = wb.clear($('defaults-note'));
+        try {
+            const d = await wb.api('/api/markets/' + encodeURIComponent(symbol) + '/defaults');
+            base = d.config;
+            fill(base);
+            validate();
+            note.appendChild(wb.el('div', { class: d.valid ? 'ok' : 'error', text: wb.t('cfg.defaultsLoaded', { symbol: symbol }) }));
+            d.notes.forEach(function (n) { note.appendChild(wb.el('p', { class: 'muted', text: n })); });
+        } catch (e) {
+            note.appendChild(wb.el('div', { class: 'error', text: wb.t('cfg.defaultsFailed') + ': ' + e.message }));
+        }
+    }
+    $('symbol').addEventListener('change', function () {
+        const v = $('symbol').value.trim().toUpperCase();
+        if (v) { loadDefaults(v); }
+    });
+
     fill(base);
     validate();
+    const wanted = new URLSearchParams(location.search).get('symbol');
+    if (wanted) { loadDefaults(wanted.toUpperCase()); }
 });
 </script>
 {% endblock %}

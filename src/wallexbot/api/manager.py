@@ -17,9 +17,10 @@ from typing import Any
 from wallexbot.analytics.backtest import Backtester, BacktestResult
 from wallexbot.analytics.market_status import build_market_status, jsonable
 from wallexbot.analytics.replay import candles_to_ticks
-from wallexbot.config.schema import Config
+from wallexbot.config.schema import Config, validate_config
 from wallexbot.engine import BotEngine, EngineConfig, EngineState
 from wallexbot.engine.recovery import recoverable_runs
+from wallexbot.market_defaults import suggest_config
 from wallexbot.recover import rebuild_engine
 from wallexbot.setup import GridSetup, find_market
 from wallexbot.storage.repository import Repository
@@ -28,6 +29,7 @@ from wallexbot.wallex.live_feed import make_price_feed
 from wallexbot.wallex.price_feed import PriceFeedReplay
 
 MAX_CURVE_POINTS = 200
+MARKETS_TTL_SECONDS = 10.0  # the coin list is ~50 KB; do not refetch it on every page refresh
 
 
 class UnknownRun(KeyError):
@@ -64,6 +66,8 @@ class RunManager:
         self._runs: dict[str, _ActiveRun] = {}
         self._backtests: dict[str, dict[str, Any]] = {}
         self._backtest_tasks: set[asyncio.Task[None]] = set()
+        self._markets_cache: tuple[float, list[dict[str, Any]]] | None = None
+        self._market_objects: dict[str, Any] = {}
 
     # --- paper runs -----------------------------------------------------------------
 
@@ -124,6 +128,63 @@ class RunManager:
         if not trades:
             return None
         return {"symbol": symbol, "price": str(trades[0].price), "timestamp": trades[0].timestamp}
+
+    async def markets(self) -> list[dict[str, Any]]:
+        """Every Wallex spot market with price and 24 h figures, biggest turnover first."""
+        rows = await self._market_rows()
+        return [dict(r) for r in rows]
+
+    async def _market_rows(self) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        if self._markets_cache is not None and now - self._markets_cache[0] < MARKETS_TTL_SECONDS:
+            return self._markets_cache[1]
+        client = self._client_factory()
+        listed = await asyncio.to_thread(client.get_markets)
+        rows = [
+            jsonable(
+                {
+                    "symbol": str(m.symbol),
+                    "base": m.base_asset,
+                    "quote": m.quote_asset,
+                    "price": m.price,
+                    "change_24h_pct": m.change_24h_pct,
+                    "quote_volume_24h": m.quote_volume_24h,
+                    "min_notional_hint": m.min_notional_hint,
+                    "price_precision": m.price_precision,
+                    "amount_precision": m.amount_precision,
+                    "is_zero_fee": m.is_zero_fee,
+                    "tradable": m.price is not None,
+                }
+            )
+            for m in listed
+        ]
+        rows.sort(key=lambda r: Decimal(r["quote_volume_24h"] or 0), reverse=True)
+        self._markets_cache = (now, rows)
+        self._market_objects = {str(m.symbol): m for m in listed}
+        return rows
+
+    async def market_defaults(self, symbol: str) -> dict[str, Any] | None:
+        """A starting grid for one coin plus whether it passes validation; None if unknown."""
+        await self._market_rows()
+        info = self._market_objects.get(symbol)
+        if info is None:
+            return None
+        suggestion = suggest_config(info)  # ValueError("no price") for inactive markets
+        errors: list[str] = []
+        try:
+            validate_config(suggestion["config"])
+        except ValueError as exc:
+            errors = [str(exc)]
+        result: dict[str, Any] = jsonable(
+            {
+                "symbol": symbol,
+                "config": suggestion["config"],
+                "notes": suggestion["notes"],
+                "valid": not errors,
+                "errors": errors,
+            }
+        )
+        return result
 
     async def market_status(self, config: Config) -> dict[str, Any]:
         """Neutral market facts for the configured grid (public data only)."""

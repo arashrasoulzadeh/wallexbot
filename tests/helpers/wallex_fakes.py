@@ -91,3 +91,17 @@ def swinging_candles(n: int = 40) -> list[Candle]:
             )
         )
     return out
+
+
+def real_markets() -> list[Market]:
+    """All 373 Wallex spot markets exactly as recorded from the live API (tests/fixtures)."""
+    import httpx
+
+    class Replay:
+        def request(self, method: str, url: str, **kwargs):  # noqa: ANN001, ANN201
+            data = json.loads((FIXTURES / "markets_full.json").read_text(encoding="utf-8"))
+            return httpx.Response(200, json=data, request=httpx.Request(method, url))
+
+    from wallexbot.wallex.client import WallexRestClient
+
+    return WallexRestClient(transport=Replay()).get_markets()

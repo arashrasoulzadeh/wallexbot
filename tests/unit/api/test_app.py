@@ -51,33 +51,16 @@ class TestAPI:
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
-    def test_markets_endpoint(self, client, repo):
-        """GET /api/markets returns spot markets."""
-        from unittest.mock import patch
-
-        from wallexbot.wallex.models import Market
-
-        mock_markets = [
-            Market(
-                symbol=Symbol("USDTTMN"),
-                base_asset="USDT",
-                quote_asset="TMN",
-                price_precision=2,
-                amount_precision=4,
-                is_spot=True,
-            ),
-        ]
-        with patch("wallexbot.api.app.WallexRestClient") as mock_client_class:
-            mock_client = Mock()
-            mock_client.get_markets.return_value = mock_markets
-            mock_client_class.return_value = mock_client
-
-            response = client.get("/api/markets")
-            assert response.status_code == 200
-            data = response.json()
-            assert isinstance(data, list)
-            assert len(data) == 1
-            assert data[0]["symbol"] == "USDTTMN"
+    def test_markets_endpoint(self, client, engine_manager):
+        """GET /api/markets lists the markets (via the run manager)."""
+        engine_manager.markets = AsyncMock(
+            return_value=[{"symbol": "USDTTMN", "quote": "TMN", "tradable": True}]
+        )
+        response = client.get("/api/markets")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list) and len(data) == 1
+        assert data[0]["symbol"] == "USDTTMN"
 
     def test_candles_endpoint(self, client):
         """GET /api/candles returns candles."""

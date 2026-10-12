@@ -348,3 +348,103 @@ def test_market_status_reports_an_unreachable_wallex_as_502():
     with TestClient(create_app(repo=repo, engine_manager=manager)) as c:
         r = c.post("/api/market-status", json={"config": config_dict()})
         assert r.status_code == 502 and "503" in r.json()["detail"]
+
+
+# --- every Wallex coin: the market list, per-coin defaults, and runs started from them -----------
+
+from decimal import Decimal as _D  # noqa: E402
+
+from tests.helpers.wallex_fakes import real_markets  # noqa: E402
+from wallexbot.wallex.price_feed import PriceTick  # noqa: E402
+
+
+class _PriceFeed:
+    """Three prices around a coin's own price, then idle."""
+
+    def __init__(self, price, symbol):
+        self.prices, self.symbol, self.closed = (
+            [price, price * _D("0.995"), price * _D("1.004")],
+            symbol,
+            asyncio.Event(),
+        )
+
+    async def subscribe(self, symbol): ...
+    async def unsubscribe(self, symbol): ...
+
+    async def ticks(self):
+        for i, p in enumerate(self.prices):
+            yield PriceTick(
+                symbol=self.symbol, price=p, timestamp=1_700_000_000_000 + i * 60_000, source="test"
+            )
+        await self.closed.wait()
+
+    async def close(self):
+        self.closed.set()
+
+
+@pytest.fixture
+def coins_client():
+    markets = real_markets()
+    by = {str(m.symbol): m for m in markets}
+    repo = InMemoryRepository()
+    manager = RunManager(
+        repo,
+        client_factory=lambda: FakeClient(markets=markets),
+        feed_factory=lambda kind, symbol, c: _PriceFeed(by[str(symbol)].price, symbol),
+    )
+    with TestClient(create_app(repo=repo, engine_manager=manager, stream_interval=0.05)) as c:
+        c.by = by  # type: ignore[attr-defined]
+        yield c
+
+
+def test_the_market_list_has_every_coin_biggest_first(coins_client):
+    rows = coins_client.get("/api/markets").json()
+    assert len(rows) == 373
+    assert {r["quote"] for r in rows} == {"TMN", "USDT"}
+    volumes = [_D(r["quote_volume_24h"]) for r in rows if r["quote_volume_24h"] is not None]
+    assert volumes == sorted(volumes, reverse=True)
+    first = rows[0]
+    assert {
+        "symbol",
+        "base",
+        "quote",
+        "price",
+        "change_24h_pct",
+        "quote_volume_24h",
+        "min_notional_hint",
+        "price_precision",
+        "amount_precision",
+        "tradable",
+    } <= set(first)
+    assert any(not r["tradable"] for r in rows) and any(r["tradable"] for r in rows)
+    json.dumps(rows)
+
+
+def test_defaults_for_a_coin_come_with_a_validation_verdict(coins_client):
+    body = coins_client.get("/api/markets/PEPEUSDT/defaults").json()
+    assert body["symbol"] == "PEPEUSDT" and body["valid"] is True and body["errors"] == []
+    assert body["config"]["market"]["symbol"] == "PEPEUSDT"
+    assert coins_client.post("/api/config/validate", json=body["config"]).json()["valid"] is True
+
+
+def test_defaults_for_unknown_or_inactive_markets_are_refused(coins_client):
+    assert coins_client.get("/api/markets/NOPEUSDT/defaults").status_code == 404
+    inactive = next(s for s, m in coins_client.by.items() if m.price is None)
+    r = coins_client.get(f"/api/markets/{inactive}/defaults")
+    assert r.status_code == 422 and "no price" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("symbol", ["USDTTMN", "PEPEUSDT", "BTCTMN"])
+def test_a_paper_run_starts_and_trades_from_a_coins_defaults(coins_client, symbol):
+    config = coins_client.get(f"/api/markets/{symbol}/defaults").json()["config"]
+    run_id = coins_client.post("/api/paper-runs", json={"config": config}).json()["id"]
+    run = wait_for(
+        lambda: (
+            (j := coins_client.get(f"/api/runs/{run_id}").json())["status"]["ticks_processed"] == 3
+            and j
+        )
+    )
+    assert run["market"] == symbol and run["status"]["state"] == "running"
+    assert run["orders"] and run["status"]["rejected_orders"] == 0
+    assert run["status"]["fills"] >= 1  # the -0.5% / +0.4% swings cross at least one level
+    coins_client.post(f"/api/runs/{run_id}/stop")

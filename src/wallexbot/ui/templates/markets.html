@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 data-i18n="mkts.title">Markets</h1>
+<p class="lead" data-i18n="mkts.intro"></p>
+
+<div class="card">
+    <div class="toolbar">
+        <div><label for="search" data-i18n="mkts.search">Search</label><input id="search" autocomplete="off"></div>
+        <div><label for="quote" data-i18n="mkts.quote">Quote currency</label>
+            <select id="quote"><option value="" data-i18n="mkts.all"></option></select></div>
+        <div><label for="sort" data-i18n="mkts.sort">Sort by</label>
+            <select id="sort"><option value="volume" data-i18n="mkts.byVolume"></option>
+                <option value="change" data-i18n="mkts.byChange"></option>
+                <option value="name" data-i18n="mkts.byName"></option></select></div>
+    </div>
+    <p class="muted" id="count"></p>
+    <div id="message"></div>
+    <div class="scroll"><table id="table"></table></div>
+</div>
+
+<script>
+wb.ready.then(async function () {
+    const $ = function (id) { return document.getElementById(id); };
+    let markets = [];
+
+    function say(kind, text) {
+        const box = wb.clear($('message'));
+        if (text) { box.appendChild(wb.el('div', { class: kind, text: text })); }
+    }
+
+    function visible() {
+        const q = $('search').value.trim().toLowerCase();
+        const quote = $('quote').value;
+        const rows = markets.filter(function (m) {
+            return (!quote || m.quote === quote) && (!q || m.symbol.toLowerCase().indexOf(q) >= 0);
+        });
+        const how = $('sort').value;
+        rows.sort(function (a, b) {
+            if (how === 'name') { return a.symbol < b.symbol ? -1 : 1; }
+            if (how === 'change') { return Number(b.change_24h_pct || -1e9) - Number(a.change_24h_pct || -1e9); }
+            return Number(b.quote_volume_24h || 0) - Number(a.quote_volume_24h || 0);
+        });
+        return rows;
+    }
+
+    function render() {
+        const rows = visible();
+        $('count').textContent = wb.t('mkts.count', { shown: rows.length, total: markets.length });
+        const node = wb.clear($('table'));
+        const head = wb.el('tr', {});
+        [['mkts.symbol', ''], ['mkts.price', 'num'], ['mkts.change', 'num'], ['mkts.volume', 'num'], ['mkts.min', 'num'], ['', '']].forEach(function (h) {
+            head.appendChild(wb.el('th', { class: h[1], text: h[0] ? wb.t(h[0]) : '' }));
+        });
+        node.appendChild(wb.el('thead', {}, head));
+        const body = wb.el('tbody', {});
+        rows.slice(0, 400).forEach(function (m) {
+            const tr = wb.el('tr', {});
+            tr.appendChild(wb.el('td', { text: m.symbol }));
+            tr.appendChild(wb.el('td', { class: 'num', text: m.price === null ? wb.t('mkts.noPrice') : wb.num(m.price, 6) }));
+            tr.appendChild(wb.el('td', { class: 'num ' + wb.signClass(m.change_24h_pct), text: m.change_24h_pct === null ? '-' : wb.pct(m.change_24h_pct, 2) }));
+            tr.appendChild(wb.el('td', { class: 'num', text: wb.num(m.quote_volume_24h || 0, 0) }));
+            tr.appendChild(wb.el('td', { class: 'num', text: m.min_notional_hint === null ? '-' : wb.num(m.min_notional_hint, 2) }));
+            const last = wb.el('td', {});
+            if (m.tradable) {
+                last.appendChild(wb.el('a', { href: '/configure?symbol=' + encodeURIComponent(m.symbol), text: wb.t('mkts.use') }));
+                last.appendChild(document.createTextNode(' · '));
+                last.appendChild(wb.el('a', { href: '/market?symbol=' + encodeURIComponent(m.symbol), text: wb.t('mkts.status') }));
+            }
+            tr.appendChild(last);
+            body.appendChild(tr);
+        });
+        node.appendChild(body);
+    }
+
+    try { markets = await wb.api('/api/markets'); } catch (e) { say('error', wb.t('mkts.error') + ': ' + e.message); return; }
+    Array.from(new Set(markets.map(function (m) { return m.quote; }))).sort().forEach(function (q) {
+        $('quote').appendChild(wb.el('option', { value: q, text: q }));
+    });
+    ['input', 'change'].forEach(function (ev) {
+        $('search').addEventListener(ev, render);
+        $('quote').addEventListener(ev, render);
+        $('sort').addEventListener(ev, render);
+    });
+    document.addEventListener('wb:lang', render);
+    render();
+});
+</script>
+{% endblock %}

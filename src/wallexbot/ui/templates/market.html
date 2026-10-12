@@ -40,6 +40,11 @@
 wb.ready.then(async function () {
     const $ = function (id) { return document.getElementById(id); };
     let config = await wb.config.current();
+    const wanted = new URLSearchParams(location.search).get('symbol');
+    if (wanted) {   // a coin picked on the Markets page: look at it with its own starting grid
+        try { config = (await wb.api('/api/markets/' + encodeURIComponent(wanted.toUpperCase()) + '/defaults')).config; }
+        catch (e) { /* fall back to the saved configuration */ }
+    }
     let data = null;
 
     function say(kind, text) {

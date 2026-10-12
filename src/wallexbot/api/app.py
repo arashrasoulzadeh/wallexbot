@@ -113,18 +113,24 @@ def create_app(
     # Markets
     @app.get("/api/markets")
     async def get_markets() -> Any:
-        client = WallexRestClient()
-        markets = client.get_markets()
-        return [
-            {
-                "symbol": str(m.symbol),
-                "base": m.base_asset,
-                "quote": m.quote_asset,
-                "price_precision": m.price_precision,
-                "amount_precision": m.amount_precision,
-            }
-            for m in markets
-        ]
+        """Every Wallex spot market with price and 24 h figures, biggest turnover first."""
+        try:
+            return await manager.markets()
+        except (WallexApiError, httpx.HTTPError, OSError) as e:
+            raise HTTPException(502, str(e)) from e
+
+    @app.get("/api/markets/{symbol}/defaults")
+    async def get_market_defaults(symbol: str) -> Any:
+        """A starting grid sized for this coin (a place to start, not a recommendation)."""
+        try:
+            result = await manager.market_defaults(symbol)
+        except ValueError as e:  # e.g. "has no price (inactive market?)"
+            raise HTTPException(422, str(e)) from e
+        except (WallexApiError, httpx.HTTPError, OSError) as e:
+            raise HTTPException(502, str(e)) from e
+        if result is None:
+            raise HTTPException(404, f"market {symbol} not found")
+        return result
 
     # Candles
     @app.get("/api/candles")
@@ -589,6 +595,7 @@ def create_app(
     page("/runs", "runs.html", "runs")
     page("/history", "history.html", "history")
     page("/market", "market.html", "market")
+    page("/markets", "markets.html", "markets")
     page("/settings", "unavailable.html", "settings")
 
     return app
