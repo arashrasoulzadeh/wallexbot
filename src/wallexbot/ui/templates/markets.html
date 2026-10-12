@@ -58,7 +58,7 @@ wb.ready.then(async function () {
             tr.appendChild(wb.el('td', { text: m.symbol }));
             tr.appendChild(wb.el('td', { class: 'num', text: m.price === null ? wb.t('mkts.noPrice') : wb.num(m.price, 6) }));
             tr.appendChild(wb.el('td', { class: 'num ' + wb.signClass(m.change_24h_pct), text: m.change_24h_pct === null ? '-' : wb.pct(m.change_24h_pct, 2) }));
-            tr.appendChild(wb.el('td', { class: 'num', text: wb.num(m.quote_volume_24h || 0, 0) }));
+            tr.appendChild(wb.el('td', { class: 'num', text: m.quote_volume_24h === null ? '-' : wb.num(m.quote_volume_24h, 0) }));
             tr.appendChild(wb.el('td', { class: 'num', text: m.min_notional_hint === null ? '-' : wb.num(m.min_notional_hint, 2) }));
             const last = wb.el('td', {});
             if (m.tradable) {
@@ -73,6 +73,11 @@ wb.ready.then(async function () {
     }
 
     try { markets = await wb.api('/api/markets'); } catch (e) { say('error', wb.t('mkts.error') + ': ' + e.message); return; }
+    // Wallex does not always report turnover for spot markets; then sorting by it is meaningless
+    if (!markets.some(function (m) { return m.quote_volume_24h !== null; })) {
+        $('sort').querySelector('option[value=volume]').remove();
+        $('sort').value = 'name';
+    }
     Array.from(new Set(markets.map(function (m) { return m.quote; }))).sort().forEach(function (q) {
         $('quote').appendChild(wb.el('option', { value: q, text: q }));
     });
