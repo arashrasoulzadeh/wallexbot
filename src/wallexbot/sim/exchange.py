@@ -10,7 +10,7 @@ from wallexbot.domain.market import Market, OrderStatus, OrderType, Side
 from wallexbot.domain.money import quantize_down
 from wallexbot.domain.order import Fill, Order, OrderRequest
 from wallexbot.sim.matching import FillModel, MatchingEngine
-from wallexbot.sim.rate_limiter import RateLimiter
+from wallexbot.sim.rate_limiter import RateLimiter, RateLimitExceeded
 
 
 @dataclass
@@ -76,7 +76,7 @@ class SimulatedExchange:
     def _check_rate_limit(self) -> None:
         """Check rate limit, raise if exceeded."""
         if not self._rate_limiter.acquire():
-            raise RuntimeError("Rate limit exceeded: 20 requests per 10 seconds")
+            raise RateLimitExceeded("Rate limit exceeded: 20 requests per 10 seconds")
 
     def _validate_order_request(self, request: OrderRequest) -> None:
         """Validate order request against exchange rules."""
@@ -227,7 +227,7 @@ class SimulatedExchange:
     def cancel_order(self, order_id: str) -> None:
         """Cancel an open order."""
         self._apply_latency()
-        self._check_rate_limit()
+        # Only order placement is rate limited (20 per 10 s, per the Wallex docs).
 
         order = self._orders.get(order_id)
         if order is None:
@@ -253,6 +253,13 @@ class SimulatedExchange:
         if order is None:
             raise ValueError(f"Order not found: {order_id}")
         return order
+
+    def get_order_by_client_id(self, client_id: str) -> Order | None:
+        """Find an order by the client id it was placed with (None if unknown)."""
+        for order in self._orders.values():
+            if order.client_id == client_id:
+                return order
+        return None
 
     def open_orders(self) -> list[Order]:
         """Get all open orders."""

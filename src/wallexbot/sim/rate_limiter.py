@@ -3,6 +3,10 @@
 from wallexbot.domain import Clock
 
 
+class RateLimitExceeded(RuntimeError):
+    """Raised when the simulated exchange refuses a request because of its request rate."""
+
+
 class RateLimiter:
     """Token bucket rate limiter."""
 
