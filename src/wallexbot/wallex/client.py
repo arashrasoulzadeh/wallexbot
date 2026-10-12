@@ -1,21 +1,42 @@
-"""Wallex REST client for public endpoints."""
+"""Wallex REST client for public endpoints (no API key is ever sent).
 
-import time
-from dataclasses import dataclass
+Response shapes were verified against the live public API; recorded samples live in
+tests/fixtures/wallex/. See docs/wallex-api.md for the endpoint reference.
+"""
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Protocol
 
 import httpx
 
-from wallexbot.domain import Clock
+from wallexbot.domain import Clock, SystemClock
 from wallexbot.domain.market import Symbol
 from wallexbot.domain.money import parse_wire_string
 from wallexbot.wallex.models import Candle, Depth, Market, OrderBookLevel, Trade
 
 
-class Transport(Protocol):
-    """HTTP transport protocol for testing."""
+class WallexApiError(RuntimeError):
+    """The API answered with an error (HTTP status >= 400 or `success: false`)."""
 
-    def request(self, method: str, url: str, **kwargs) -> httpx.Response: ...
+
+class Transport(Protocol):
+    """HTTP transport protocol, so tests can inject canned responses."""
+
+    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response: ...
+
+
+def _decimal(value: Any) -> Decimal:
+    """Parse a JSON number or numeric string into a Decimal without float artefacts."""
+    return parse_wire_string(str(value))
+
+
+def _iso_to_ms(value: str) -> int:
+    """'2026-10-12T09:28:31Z' -> epoch milliseconds."""
+    return int(
+        datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC).timestamp() * 1000
+    )
 
 
 @dataclass
@@ -24,165 +45,119 @@ class WallexRestClient:
 
     base_url: str = "https://api.wallex.ir"
     transport: Transport | None = None
-    clock: Clock = None
-    _client: httpx.AsyncClient = None
+    clock: Clock = field(default_factory=SystemClock)
+    _http: httpx.Client | None = field(default=None, repr=False)
 
-    def __post_init__(self) -> None:
-        if self.clock is None:
-            self.clock = _RealClock()
+    # --- plumbing -----------------------------------------------------------------
 
-    def _get_client(self) -> httpx.Client:
-        """Get or create HTTP client."""
+    def _request(self, path: str, params: dict[str, Any]) -> Any:
+        """GET `path` and return the decoded JSON body, raising WallexApiError on failure."""
+        url = f"{self.base_url}{path}"
         if self.transport is not None:
-            # For testing with mock transport
-            return self
-        if self._client is None:
-            self._client = httpx.Client(timeout=30.0)
-        return self._client
+            response = self.transport.request("GET", url, params=params)
+        else:
+            if self._http is None:
+                self._http = httpx.Client(timeout=30.0)
+            response = self._http.request("GET", url, params=params)
 
-    def request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        """Make request using mock transport."""
-        if self.transport is None:
-            raise RuntimeError("No transport available")
-        return self.transport.request(method, url, **kwargs)
+        if response.status_code >= 400:
+            raise WallexApiError(f"HTTP {response.status_code} for {path}: {response.text[:200]}")
+        return response.json()
 
-    def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
-        """Handle API response envelope."""
-        data = response.json()
+    @staticmethod
+    def _unwrap(body: Any) -> Any:
+        """Strip the {success, message, result} envelope, raising on `success: false`."""
+        if isinstance(body, dict) and body.get("success") is False:
+            raise WallexApiError(
+                f"API error {body.get('code', 'unknown')}: {body.get('message', 'Unknown error')}"
+            )
+        if isinstance(body, dict) and "result" in body:
+            return body["result"]
+        return body
 
-        if not data.get("success", True):
-            code = data.get("code", "unknown")
-            message = data.get("message", "Unknown error")
-            raise RuntimeError(f"API error {code}: {message}")
-
-        return data.get("result", {})
+    # --- endpoints ------------------------------------------------------------------
 
     def get_markets(self) -> list[Market]:
-        """Get all spot markets."""
-        client = self._get_client()
-        response = client.request("GET", f"{self.base_url}/hector/web/v1/markets")
-        result = self._handle_response(response)
-
-        markets = []
-        for item in result:
-            if item.get("isSpot", False):
-                markets.append(
-                    Market(
-                        symbol=Symbol(item["symbol"]),
-                        base_asset=item["baseAsset"],
-                        quote_asset=item["quoteAsset"],
-                        price_precision=item["pricePrecision"],
-                        amount_precision=item["amountPrecision"],
-                        is_spot=item["isSpot"],
-                    )
-                )
-        return markets
+        """All spot markets (`GET /hector/web/v1/markets`, `result.markets[]`)."""
+        result = self._unwrap(self._request("/hector/web/v1/markets", {}))
+        return [
+            Market(
+                symbol=Symbol(item["symbol"]),
+                base_asset=item["base_asset"],
+                quote_asset=item["quote_asset"],
+                price_precision=int(item["price_precision"]),
+                amount_precision=int(item["amount_precision"]),
+                is_spot=bool(item["is_spot"]),
+            )
+            for item in result["markets"]
+            if item.get("is_spot")
+        ]
 
     def get_depth(self, symbol: str) -> Depth:
-        """Get order book depth for a symbol."""
-        client = self._get_client()
-        response = client.request(
-            "GET", f"{self.base_url}/hector/web/v1/depth", params={"symbol": symbol}
-        )
-        result = self._handle_response(response)
+        """Order book (`GET /v1/depth`): `result.bid` / `result.ask`, best price first."""
+        result = self._unwrap(self._request("/v1/depth", {"symbol": symbol}))
 
-        bids = [
-            OrderBookLevel(price=parse_wire_string(p), quantity=parse_wire_string(q))
-            for p, q in result.get("bid", [])
-        ]
-        asks = [
-            OrderBookLevel(price=parse_wire_string(p), quantity=parse_wire_string(q))
-            for p, q in result.get("ask", [])
-        ]
+        def levels(rows: list[dict[str, Any]]) -> list[OrderBookLevel]:
+            return [
+                OrderBookLevel(price=_decimal(r["price"]), quantity=_decimal(r["quantity"]))
+                for r in rows
+            ]
 
         return Depth(
             symbol=Symbol(symbol),
-            bids=bids,
-            asks=asks,
+            bids=levels(result.get("bid", [])),
+            asks=levels(result.get("ask", [])),
             timestamp=int(self.clock.now() * 1000),
         )
 
     def get_latest_trades(self, symbol: str, limit: int = 50) -> list[Trade]:
-        """Get latest trades for a symbol."""
-        client = self._get_client()
-        response = client.request(
-            "GET",
-            f"{self.base_url}/hector/web/v1/trades",
-            params={"symbol": symbol, "limit": limit},
-        )
-        result = self._handle_response(response)
-
-        trades = []
-        for item in result:
-            trades.append(
-                Trade(
-                    symbol=Symbol(symbol),
-                    price=parse_wire_string(item["price"]),
-                    quantity=parse_wire_string(item["quantity"]),
-                    side=item["side"].upper(),
-                    timestamp=item["timestamp"],
-                )
+        """Latest public trades (`GET /v1/trades`, `result.latestTrades[]`), newest first."""
+        result = self._unwrap(self._request("/v1/trades", {"symbol": symbol}))
+        return [
+            Trade(
+                symbol=Symbol(symbol),
+                price=_decimal(item["price"]),
+                quantity=_decimal(item["quantity"]),
+                side="BUY" if item["isBuyOrder"] else "SELL",
+                timestamp=_iso_to_ms(item["timestamp"]),
             )
-        return trades
+            for item in result["latestTrades"][:limit]
+        ]
 
-    def get_candles(
-        self,
-        symbol: str,
-        resolution: str,
-        from_ts: int,
-        to_ts: int,
-    ) -> list[Candle]:
-        """Get candles for a symbol."""
-        client = self._get_client()
-        response = client.request(
-            "GET",
-            f"{self.base_url}/hector/web/v1/candles",
-            params={
-                "symbol": symbol,
-                "resolution": resolution,
-                "from": from_ts,
-                "to": to_ts,
-            },
+    def get_candles(self, symbol: str, resolution: str, from_ts: int, to_ts: int) -> list[Candle]:
+        """OHLC candles (`GET /v1/udf/history`): parallel arrays t/o/h/l/c/v, UTC seconds."""
+        body = self._request(
+            "/v1/udf/history",
+            {"symbol": symbol, "resolution": resolution, "from": from_ts, "to": to_ts},
         )
-        result = self._handle_response(response)
+        if isinstance(body, dict) and body.get("success") is False:
+            self._unwrap(body)  # raises
+        status = body.get("s")
+        if status == "no_data":
+            return []
+        if status != "ok":
+            raise WallexApiError(f"unexpected candle status {status!r}")
 
-        # Parse parallel arrays
-        timestamps = result.get("t", [])
-        opens = result.get("o", [])
-        highs = result.get("h", [])
-        lows = result.get("l", [])
-        closes = result.get("c", [])
-        volumes = result.get("v", [])
+        columns = [body.get(k, []) for k in ("t", "o", "h", "l", "c", "v")]
+        if len({len(col) for col in columns}) != 1:
+            raise WallexApiError("candle response has mismatched array lengths")
 
-        candles = []
-        for t, o, h, low, c, v in zip(timestamps, opens, highs, lows, closes, volumes, strict=True):
-            candles.append(
-                Candle(
-                    symbol=Symbol(symbol),
-                    resolution=resolution,
-                    open_time=t,
-                    open=parse_wire_string(o),
-                    high=parse_wire_string(h),
-                    low=parse_wire_string(low),
-                    close=parse_wire_string(c),
-                    volume=parse_wire_string(v),
-                )
+        return [
+            Candle(
+                symbol=Symbol(symbol),
+                resolution=resolution,
+                open_time=int(t),
+                open=_decimal(o),
+                high=_decimal(h),
+                low=_decimal(low),
+                close=_decimal(c),
+                volume=_decimal(v),
             )
-
-        return candles
+            for t, o, h, low, c, v in zip(*columns, strict=True)
+        ]
 
     def close(self) -> None:
         """Close the HTTP client."""
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-
-
-class _RealClock:
-    """Real system clock implementation."""
-
-    def now(self) -> float:
-        return time.time()
-
-    def sleep(self, seconds: float) -> None:
-        time.sleep(seconds)
+        if self._http is not None:
+            self._http.close()
+            self._http = None

@@ -1,7 +1,7 @@
 """Domain package for Wallex Grid Bot."""
 
 from wallexbot.domain.balance import Balance
-from wallexbot.domain.clock import Clock
+from wallexbot.domain.clock import Clock, SystemClock
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import (
     Market,
@@ -39,4 +39,5 @@ __all__ = [
     "FeeSchedule",
     "MinNotionalRule",
     "Clock",
+    "SystemClock",
 ]

@@ -1,0 +1,313 @@
+{
+ "result": {
+  "markets": [
+   {
+    "symbol": "USDTTMN",
+    "base_asset": "USDT",
+    "quote_asset": "TMN",
+    "fa_base_asset": "تتر",
+    "fa_quote_asset": "تومان",
+    "en_base_asset": "Tether",
+    "en_quote_asset": "Toman",
+    "categories": [
+     1
+    ],
+    "price": "264254",
+    "is_new": false,
+    "is_spot": true,
+    "is_otc": true,
+    "is_margin": true,
+    "is_tmn_based": true,
+    "is_usdt_based": false,
+    "is_zero_fee": false,
+    "leverage_step": 0.5,
+    "max_leverage": 10,
+    "created_at": "2020-01-01T00:00:00Z",
+    "amount_precision": 2,
+    "price_precision": 0,
+    "flags": [],
+    "is_market_type_enable": true,
+    "otc_min_notional": 90000,
+    "otc_max_notional": 500000000,
+    "otc_buy_enabled": true,
+    "otc_sell_enabled": true,
+    "fair_price": {
+     "ask": "263680.76212942705024",
+     "bid": "263680.76212942705024",
+     "spot": {
+      "threshold": "3",
+      "max_acceptable_buy": "4",
+      "max_acceptable_sell": "4"
+     },
+     "margin_market": {
+      "threshold": null,
+      "max_acceptable_buy": null,
+      "max_acceptable_sell": null
+     },
+     "margin_limit": {
+      "threshold": "4",
+      "max_acceptable_buy": null,
+      "max_acceptable_sell": null
+     },
+     "sakoo": {
+      "threshold": "3",
+      "max_acceptable_buy": "4",
+      "max_acceptable_sell": "4"
+     },
+     "market_maker": {
+      "threshold": "4",
+      "max_acceptable_buy": "5",
+      "max_acceptable_sell": "5"
+     }
+    },
+    "change_24h": -0.24,
+    "volume_24h": 257830.7408703825,
+    "change_7D": -1.76,
+    "quote_volume_24h": 68088756434.2462,
+    "spot_is_new": false,
+    "otc_is_new": false,
+    "highest_24h_price": "265871",
+    "lowest_24h_price": "263190"
+   },
+   {
+    "symbol": "BTCUSDT",
+    "base_asset": "BTC",
+    "quote_asset": "USDT",
+    "fa_base_asset": "بیت کوین",
+    "fa_quote_asset": "تتر",
+    "en_base_asset": "Bitcoin",
+    "en_quote_asset": "Tether",
+    "categories": [
+     44
+    ],
+    "price": "83256.46",
+    "is_new": false,
+    "is_spot": true,
+    "is_otc": true,
+    "is_margin": true,
+    "is_tmn_based": false,
+    "is_usdt_based": true,
+    "is_zero_fee": false,
+    "leverage_step": 0.5,
+    "max_leverage": 10,
+    "created_at": "2020-04-01T00:00:00Z",
+    "amount_precision": 8,
+    "price_precision": 2,
+    "flags": [],
+    "is_market_type_enable": true,
+    "otc_min_notional": 2,
+    "otc_max_notional": 2000,
+    "otc_buy_enabled": true,
+    "otc_sell_enabled": true,
+    "fair_price": {
+     "ask": "83571.78145730162214",
+     "bid": "83571.78145730162214",
+     "spot": {
+      "threshold": "4.00",
+      "max_acceptable_buy": "8.00",
+      "max_acceptable_sell": "8.00"
+     },
+     "margin_market": {
+      "threshold": null,
+      "max_acceptable_buy": null,
+      "max_acceptable_sell": null
+     },
+     "margin_limit": {
+      "threshold": "5.00",
+      "max_acceptable_buy": null,
+      "max_acceptable_sell": null
+     },
+     "sakoo": {
+      "threshold": "4.00",
+      "max_acceptable_buy": "8.00",
+      "max_acceptable_sell": "8.00"
+     },
+     "market_maker": {
+      "threshold": "5.00",
+      "max_acceptable_buy": "10.00",
+      "max_acceptable_sell": "10.00"
+     }
+    },
+    "change_24h": 0.26,
+    "volume_24h": 3.29957123,
+    "change_7D": -3.2,
+    "quote_volume_24h": 276098.5935995603,
+    "spot_is_new": false,
+    "otc_is_new": false,
+    "highest_24h_price": "84103.22",
+    "lowest_24h_price": "82832.52"
+   },
+   {
+    "symbol": "ORAITMN",
+    "base_asset": "ORAI",
+    "quote_asset": "TMN",
+    "fa_base_asset": "اورایچین",
+    "fa_quote_asset": "تومان",
+    "en_base_asset": "Oraichain Token",
+    "en_quote_asset": "Toman",
+    "categories": [
+     13,
+     34,
+     44,
+     19,
+     41
+    ],
+    "price": "174480",
+    "is_new": false,
+    "is_spot": false,
+    "is_otc": true,
+    "is_margin": false,
+    "is_tmn_based": true,
+    "is_usdt_based": false,
+    "is_zero_fee": false,
+    "leverage_step": null,
+    "max_leverage": null,
+    "created_at": "2023-08-20T14:04:51Z",
+    "amount_precision": 4,
+    "price_precision": 0,
+    "flags": [],
+    "is_market_type_enable": false,
+    "otc_min_notional": 90000,
+    "otc_max_notional": 10000000,
+    "otc_buy_enabled": true,
+    "otc_sell_enabled": true,
+    "fair_price": {
+     "ask": "167932.6094636061991743916772",
+     "bid": "167932.6094636061991743916772",
+     "spot": {
+      "threshold": "4.00",
+      "max_acceptable_buy": "8.00",
+      "max_acceptable_sell": "8.00"
+     },
+     "margin_market": {
+      "threshold": null,
+      "max_acceptable_buy": null,
+      "max_acceptable_sell": null
+     },
+     "margin_limit": {
+      "threshold": "5.00",
+      "max_acceptable_buy": null,
+      "max_acceptable_sell": null
+     },
+     "sakoo": {
+      "threshold": "4.00",
+      "max_acceptable_buy": "8.00",
+      "max_acceptable_sell": "8.00"
+     },
+     "market_maker": {
+      "threshold": "5.00",
+      "max_acceptable_buy": "10.00",
+      "max_acceptable_sell": "10.00"
+     }
+    },
+    "change_24h": 11.61,
+    "volume_24h": 5640.863,
+    "change_7D": -5.51,
+    "quote_volume_24h": 974873372.7158707,
+    "spot_is_new": false,
+    "otc_is_new": false,
+    "highest_24h_price": "187620.34",
+    "lowest_24h_price": "140847.382"
+   }
+  ],
+  "coin_categories": [
+   {
+    "id": 1,
+    "name": "بازارها | استیبل کوین‌ها",
+    "name_fa": "استیبل کوین"
+   },
+   {
+    "id": 4,
+    "name": "بازارها | میم کوین‌ها",
+    "name_fa": "میم کوین"
+   },
+   {
+    "id": 13,
+    "name": "بازارها | رمزارزهای دیفای (De.Fi)",
+    "name_fa": "دیفای"
+   },
+   {
+    "id": 16,
+    "name": "بازارها | رمزارزهای قرارداد هوشمند",
+    "name_fa": "قرارداد هوشمند"
+   },
+   {
+    "id": 34,
+    "name": "بازارها | رمزارزهای هوش مصنوعی",
+    "name_fa": "هوش مصنوعی"
+   },
+   {
+    "id": 22,
+    "name": "بازارها | رمزارزهای وب ۳.۰",
+    "name_fa": "وب ۳.۰"
+   },
+   {
+    "id": 44,
+    "name": "بازارها | رمزارزهای لایه ۱",
+    "name_fa": "لایه ۱"
+   },
+   {
+    "id": 35,
+    "name": "بازارها | رمزارزهای لایه ۲",
+    "name_fa": "لایه ۲"
+   },
+   {
+    "id": 38,
+    "name": "بازارها | رمزارزهای حوزه اپلیکیشن غیرمتمرکز (DApps)",
+    "name_fa": "اپلیکیشن غیرمتمرکز"
+   },
+   {
+    "id": 31,
+    "name": "بازارها | رمزارزهای NFT",
+    "name_fa": "NFT"
+   },
+   {
+    "id": 10,
+    "name": "بازارها | رمزارزهای متاورس",
+    "name_fa": "متاورس"
+   },
+   {
+    "id": 25,
+    "name": "بازارها | توکن‌های گیم‌فای",
+    "name_fa": "گیم‌فای"
+   },
+   {
+    "id": 19,
+    "name": "بازارها | رمزارزهای اوراکل",
+    "name_fa": "اوراکل"
+   },
+   {
+    "id": 41,
+    "name": "بازارها | رمزارزهای دیتا",
+    "name_fa": "دیتا"
+   },
+   {
+    "id": 7,
+    "name": "بازارها | توکن‌های صرافی",
+    "name_fa": "توکن صرافی"
+   },
+   {
+    "id": 47,
+    "name": "بازارها | رمزارزهای دپین",
+    "name_fa": "دپین"
+   },
+   {
+    "id": 50,
+    "name": "بازارها | دارایی های RWA",
+    "name_fa": "دارایی های RWA"
+   },
+   {
+    "id": 53,
+    "name": "آلت‌کوین های والکس",
+    "name_fa": "آلت‌کوین"
+   },
+   {
+    "id": 100001,
+    "name": "is_new",
+    "name_fa": "جدید"
+   }
+  ]
+ },
+ "message": "Success",
+ "success": true
+}
