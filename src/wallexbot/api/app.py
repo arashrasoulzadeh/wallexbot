@@ -221,7 +221,12 @@ def create_app(
         try:
             config = validate_config(request.model_dump())
         except ValidationError as e:
-            return {"valid": False, "errors": [err["msg"] for err in _validation_errors(e)]}
+            return {
+                "valid": False,
+                "errors": [
+                    err["msg"].removeprefix("Value error, ") for err in _validation_errors(e)
+                ],
+            }
         except ValueError as e:
             return {"valid": False, "errors": [str(e)]}
         grid = config.strategy["grid"]

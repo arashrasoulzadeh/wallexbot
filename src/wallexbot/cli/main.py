@@ -87,6 +87,10 @@ def create_parser() -> argparse.ArgumentParser:
     ui_parser = subparsers.add_parser("ui", help="Start web dashboard")
     ui_parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
     ui_parser.add_argument("--port", type=int, default=8080, help="Port to bind")
+    ui_parser.add_argument(
+        "--allow-remote", action="store_true", help="Allow listening on a non-local address"
+    )
+    ui_parser.add_argument("--db", help="Keep runs in this SQLite database (default: memory)")
 
     # suggest command
     suggest_parser = subparsers.add_parser("suggest", help="Get intelligent grid suggestions")
@@ -169,7 +173,7 @@ def main(args: list[str] | None = None) -> int:
         elif parsed.command == "report":
             return cmd_report(parsed.run_id)
         elif parsed.command == "ui":
-            return cmd_ui(parsed.host, parsed.port)
+            return cmd_ui(parsed.host, parsed.port, parsed.allow_remote, parsed.db)
         elif parsed.command == "suggest":
             return cmd_suggest(parsed.market, parsed.capital)
         elif parsed.command == "optimize":
@@ -428,18 +432,31 @@ def cmd_report(run_id: str) -> int:
     return 0
 
 
-def cmd_ui(host: str, port: int) -> int:
-    """Start web dashboard."""
-    print(f"Starting web dashboard on {host}:{port}")
-    print("Press Ctrl+C to stop")
-    # This would start the FastAPI server
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def cmd_ui(host: str, port: int, allow_remote: bool = False, db: str | None = None) -> int:
+    """Start the web dashboard (paper trading only)."""
     import uvicorn
 
     from wallexbot.api.app import create_app
-    from wallexbot.storage.repository import InMemoryRepository
+    from wallexbot.storage.repository import InMemoryRepository, Repository
 
-    repo = InMemoryRepository()
+    if host not in LOCAL_HOSTS:
+        if not allow_remote:
+            print(
+                f"Error: refusing to listen on {host}. The dashboard has no login and can start "
+                "runs, so it is only served on this machine. Use --allow-remote to override."
+            )
+            return 1
+        print(
+            f"WARNING: listening on {host}. Anyone who can reach this address can use the dashboard."
+        )
+
+    repo: Repository = SQLiteRepository(db) if db else InMemoryRepository()
     app = create_app(repo=repo)
+    app.state.repo = repo
+    print(f"Wallex Grid Bot dashboard: http://{host}:{port}  (paper mode, Ctrl+C to stop)")
     uvicorn.run(app, host=host, port=port)
     return 0
 

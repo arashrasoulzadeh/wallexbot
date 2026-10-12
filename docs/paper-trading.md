@@ -66,3 +66,20 @@ engine.status()            # snapshot: state, price, equity, orders, fills, cycl
 engine.kill("reason")      # kill switch, safe from anywhere
 await engine.stop()        # graceful stop
 ```
+
+## From the web UI
+
+`wallexbot ui` starts the same engine behind a dashboard. The **Paper trading** page starts a run with
+the configuration saved on the **Configure** page, shows it live (a WebSocket pushes a snapshot every
+second) and has pause, resume, stop and kill buttons. Several runs can exist; the page follows the one
+you started (its id is remembered in the browser).
+
+API (JSON, all paper only): `POST /api/paper-runs`, `GET /api/runs`, `GET /api/runs/{id}` (plus
+`/orders`, `/fills`, `/pnl`, `/grid`), `POST /api/runs/{id}/pause|resume|stop|kill`,
+`POST /api/backtests`, `GET /api/backtests/{id}`, `GET /api/config/default`,
+`POST /api/config/validate`, `WS /api/stream?run_id=`. Unknown runs are 404, a request that does not
+fit the run's state (e.g. pausing a stopped run) is 409. There is no endpoint that accepts an API key
+and no live mode.
+
+Live figures exist for runs of the current server process; after a restart, older runs are listed
+from the database (with `--db`) but without live detail.

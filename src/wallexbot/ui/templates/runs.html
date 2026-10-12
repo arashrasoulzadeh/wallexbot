@@ -32,7 +32,7 @@ wb.ready.then(function () {
         try { runs = await wb.api('/api/runs'); } catch (e) { return; }
         $('empty').style.display = runs.length ? 'none' : '';
         runs.sort(function (a, b) { return Number(b.started_at) - Number(a.started_at); });
-        cells($('runs'), ['runs.id', 'runs.market', 'runs.status', 'runs.started', 'col.order'], runs.map(function (r) {
+        cells($('runs'), ['runs.id', 'runs.market', 'runs.status', 'runs.started', 'common.open'], runs.map(function (r) {
             return wb.el('tr', {}, wb.el('td', { text: r.id }), wb.el('td', { text: r.market }),
                 wb.el('td', {}, wb.badge(r.status)), wb.el('td', { text: wb.time(r.started_at) }),
                 wb.el('td', {}, wb.el('button', { class: 'secondary', type: 'button', text: wb.t('common.open'),

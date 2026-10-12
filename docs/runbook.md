@@ -15,10 +15,18 @@ See [backtesting.md](backtesting.md).
 
 ### Web UI
 ```bash
-wallexbot ui      # http://127.0.0.1:8080
+wallexbot ui                  # http://127.0.0.1:8080, runs kept in memory
+wallexbot ui --db runs.db     # keep runs in SQLite
 ```
-**Status:** the pages and read endpoints exist, but starting, pausing and killing runs from the UI is
-not connected to the engine yet (the run-control endpoints are placeholders). Use the CLI.
+Pages: **Configure** (live checks that the grid can beat its fees, save/reset), **Backtest**,
+**Paper trading** (start, pause, resume, stop, kill switch, live ladder, orders, fills, balances),
+**Runs**, **Dashboard**. English and Persian (RTL) with a switch in the header. The configuration you
+save on the Configure page is kept in the browser and used by Backtest and Paper trading.
+
+The dashboard has no login and can start runs, so it only listens on this machine. `--allow-remote`
+overrides that (with a warning); put it behind something that authenticates before you do.
+
+The History and Settings pages are not implemented yet and are not linked.
 
 ## Stopping the Bot
 
@@ -28,7 +36,8 @@ summary and exits.
 
 ### Kill switch
 Automatic: a risk limit (`risk.max_drawdown`, `risk.daily_loss_limit`) cancels every order and halts
-the run, and says why in the summary. Programmatic: `engine.kill("reason")`. There is no UI button yet.
+the run, and says why in the summary. By hand: the **Kill switch** button on the Paper trading page
+(or `POST /api/runs/{id}/kill`, or `engine.kill("reason")` in code).
 
 ## Crash recovery
 

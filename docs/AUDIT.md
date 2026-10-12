@@ -20,7 +20,8 @@ The project is **a broad but unreliable first draft, not a finished Phases 1-17*
 | Simulator ledger (fees, settlement, fill price, double lock) | fixed, 12 tests incl. 300-step randomized conservation check |
 | Backtester | **built**: trades, answers fills, ledger-consistent PnL, candle replay, `wallexbot backtest` CLI + Markdown report (24 tests) |
 | Engine | **built**: async loop on live prices, grid built on the first real tick, fills answered, kill switch, risk halt, graceful stop, SQLite recording; `wallexbot paper`; live-tested on the public WebSocket (37 tests) |
-| Coverage | **78.0%**, gate is 90% (still failing) |
+| Web UI | **rebuilt** (old pages never rendered): real RunManager + endpoints + live stream, Configure/Backtest/Paper/Runs/Dashboard in English and Persian, localhost-only by default; verified in a real browser against live prices (47 tests) |
+| Coverage | **80.1%**, gate is 90% (still failing) |
 
 Real bugs found by the type check and fixed with regression tests: `HistoricalDataStore` crashed on `Symbol.value`; the optimizer
 passed a wrong keyword and raw Decimals as balances (hidden by a bare `except`, so it silently returned nothing); its random-search
@@ -32,11 +33,11 @@ field names, paths and frame shapes, tested only against matching mocks) and are
 
 1. ~~Backtester is a stub~~ **fixed** (see docs/backtesting.md). Remaining: no volume/queue modelling, no market orders.
 2. ~~Engine is unfinished~~ **fixed** (docs/paper-trading.md). Remaining: no crash recovery (a restart starts a fresh grid), no fill inference from polling (the simulator reports fills directly), WebSocket gaps are not resynced.
-   **The web UI run-control endpoints are still placeholders** (`EngineManager` returns fake ids like `paper_123`); they are not connected to `BotEngine`.
+   The web UI is now wired to the engine (see the progress table).
 3. **Simulator has no market orders**: MARKET and STOP_MARKET are now rejected with a clear error (they used to be accepted and never fill); the 2% price-move cancel rule (5.4.4) is still missing.
-4. **History API is stubs**: six `/api/history/*` endpoints return `[]`; the history tables from Phase 14 (ticks, trades, candles, balance and PnL snapshots, grid cycles) are not in the schema; `/api/stream` only echoes.
+4. **History API is stubs** (the History and Settings pages are no longer linked or served as real pages): six `/api/history/*` endpoints return `[]`; the history tables from Phase 14 (ticks, trades, candles, balance and PnL snapshots, grid cycles) are not in the schema; `/api/stream` only echoes.
 5. **WebSocket**: no gap resync after reconnect (6.4.5), no 50-messages-per-channel guard (6.4.6); `PriceFeed` for live WebSocket data is not wired to the engine.
-6. **Coverage 78.0%** vs 90% gate; weakest: `analytics/history.py`, `analytics/api.py`, `engine/actions.py`, `strategy/grid/sizing.py`, `sim/rate_limiter.py`.
+6. **Coverage 80.1%** vs 90% gate; weakest: `analytics/history.py`, `analytics/api.py`, `engine/actions.py`, `strategy/grid/sizing.py`, `sim/rate_limiter.py`.
 7. **Placeholder tests**: several remaining tests are `pass` or only check `hasattr` (`test_indicators.py::TestOptimizer`, `TestHistoricalDataStore`, parts of the engine/anomaly tests).
 8. Real maker/taker fee and spot minimum order size are still unknown (D16, D17); `.env` key value should be rotated if real.
 

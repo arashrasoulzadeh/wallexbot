@@ -165,6 +165,7 @@ def test_validation_explains_why_a_grid_is_rejected(client):
     cfg["strategy"]["grid"]["total_investment"] = "9000000"
     body = client.post("/api/config/validate", json=cfg).json()
     assert body["valid"] is False and "break-even" in body["errors"][0]
+    assert not body["errors"][0].startswith("Value error")  # no framework jargon for the user
 
 
 def test_notification_test_does_not_pretend_to_send(client):
