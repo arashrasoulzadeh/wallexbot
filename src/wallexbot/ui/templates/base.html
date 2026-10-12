@@ -12,7 +12,7 @@
     <header class="top">
         <span class="brand" data-i18n="app.name">Wallex Grid Bot</span>
         <nav>
-            {% set pages = [("dashboard", "/dashboard"), ("configure", "/configure"), ("backtest", "/backtest"), ("paper", "/paper"), ("market", "/market"), ("markets", "/markets"), ("history", "/history"), ("runs", "/runs")] %}
+            {% set pages = [("dashboard", "/dashboard"), ("configure", "/configure"), ("backtest", "/backtest"), ("paper", "/paper"), ("market", "/market"), ("markets", "/markets"), ("history", "/history"), ("runs", "/runs"), ("settings", "/settings")] %}
             {% for key, href in pages %}
             <a href="{{ href }}" class="{{ 'active' if page == key else '' }}" data-i18n="nav.{{ key }}">{{ key }}</a>
             {% endfor %}

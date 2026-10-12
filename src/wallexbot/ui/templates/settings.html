@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 data-i18n="set.title">Settings</h1>
+<p class="lead" data-i18n="set.intro"></p>
+<div id="message"></div>
+
+<div class="card">
+    <h2 data-i18n="set.mode">Mode</h2>
+    <p><strong data-i18n="set.paperOnly"></strong></p>
+    <p class="muted" data-i18n="set.noKey"></p>
+</div>
+
+<div class="card">
+    <h2 data-i18n="set.telegram">Telegram alerts</h2>
+    <p id="tg-status"></p>
+    <p class="muted" data-i18n="set.tgHow"></p>
+    <pre class="code">export WALLEXBOT_TELEGRAM_TOKEN="123456:ABC..."
+export WALLEXBOT_TELEGRAM_CHAT_ID="your chat id"
+wallexbot ui</pre>
+    <p class="muted" data-i18n="set.tgSecret"></p>
+    <p class="muted"><span data-i18n="set.tgWhen"></span> <span id="tg-kinds"></span></p>
+    <div class="actions"><button id="tg-test" type="button" data-i18n="set.tgTest"></button></div>
+    <div id="tg-result"></div>
+</div>
+
+<div class="card">
+    <h2 data-i18n="set.fees">Fees assumed for new coins</h2>
+    <p class="muted" data-i18n="set.feesText"></p>
+    <table id="fees"></table>
+</div>
+
+<div class="card">
+    <h2 data-i18n="set.display">Display</h2>
+    <p class="muted" data-i18n="set.displayText"></p>
+</div>
+
+<script>
+wb.ready.then(async function () {
+    const $ = function (id) { return document.getElementById(id); };
+    let data = null;
+
+    function render() {
+        if (!data) { return; }
+        $('tg-status').textContent = wb.t(data.telegram.configured ? 'set.tgOn' : 'set.tgOff');
+        $('tg-kinds').textContent = data.alerts.map(function (k) { return wb.t('set.alert.' + k); }).join(', ');
+        $('tg-test').disabled = !data.telegram.configured;
+        const table = wb.clear($('fees'));
+        const head = wb.el('tr', {});
+        ['set.quote', 'set.feeRate'].forEach(function (h) { head.appendChild(wb.el('th', { text: wb.t(h) })); });
+        table.appendChild(wb.el('thead', {}, head));
+        const body = wb.el('tbody', {});
+        Object.keys(data.fees).forEach(function (q) {
+            body.appendChild(wb.el('tr', {}, wb.el('td', { text: q }), wb.el('td', { text: wb.num(Number(data.fees[q]) * 100, 3) + '%' })));
+        });
+        table.appendChild(body);
+    }
+
+    $('tg-test').addEventListener('click', async function () {
+        const box = wb.clear($('tg-result'));
+        try {
+            const r = await wb.post('/api/notify/test', {});
+            box.appendChild(wb.el('div', { class: r.sent ? 'ok' : 'error', text: wb.t(r.sent ? 'set.tgSent' : 'set.tgOff') }));
+        } catch (e) { box.appendChild(wb.el('div', { class: 'error', text: e.message })); }
+    });
+
+    try { data = await wb.api('/api/settings'); }
+    catch (e) { wb.clear($('message')).appendChild(wb.el('div', { class: 'error', text: e.message })); return; }
+    document.addEventListener('wb:lang', render);
+    render();
+});
+</script>
+{% endblock %}

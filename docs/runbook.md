@@ -26,7 +26,19 @@ save on the Configure page is kept in the browser and used by Backtest and Paper
 The dashboard has no login and can start runs, so it only listens on this machine. `--allow-remote`
 overrides that (with a warning); put it behind something that authenticates before you do.
 
-The **History** page shows past runs (see [paper-trading.md](paper-trading.md#history)). The Settings page is not implemented yet and is not linked.
+### Telegram alerts
+Off unless both variables are set when the dashboard starts (create a bot with @BotFather):
+```bash
+export WALLEXBOT_TELEGRAM_TOKEN="123456:ABC..."
+export WALLEXBOT_TELEGRAM_CHAT_ID="your chat id"
+wallexbot ui
+```
+The token is read from the environment only; it is never written to a file, the database or the UI. You get a message when
+a run is halted (kill switch or risk limit), fails with an error, or the price leaves the grid range (once per exit).
+The **Settings** page shows whether Telegram is set up and has a "send a test message" button. Alerts cover runs started
+from the dashboard (new or recovered); the CLI `paper` command does not send them yet.
+
+The **History** page shows past runs (see [paper-trading.md](paper-trading.md#history)). The **Settings** page shows the mode (paper only), Telegram status and the fees assumed for new coins.
 
 ## Stopping the Bot
 

@@ -7,6 +7,7 @@ runs keep their last snapshot so the UI can still show them.
 
 import asyncio
 import dataclasses
+import os
 import time
 import uuid
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from typing import Any
 
 import httpx
 
+from wallexbot.alerts.setup import notifier_from_env
 from wallexbot.analytics.backtest import Backtester, BacktestResult
 from wallexbot.analytics.market_status import build_market_status, jsonable
 from wallexbot.analytics.replay import candles_to_ticks
@@ -33,6 +35,7 @@ from wallexbot.wallex.price_feed import PriceFeedReplay
 
 MAX_CURVE_POINTS = 200
 WEEK_SECONDS = 7 * 24 * 3600
+_FROM_ENV: Any = object()  # marker: read Telegram settings from the environment
 MARKETS_TTL_SECONDS = 10.0  # the coin list is ~50 KB; do not refetch it on every page refresh
 
 
@@ -63,8 +66,12 @@ class RunManager:
         repo: Repository,
         client_factory: Callable[[], WallexRestClient] = WallexRestClient,
         feed_factory: Callable[[str, Any, Any], Any] = make_price_feed,
+        notifier: Any = _FROM_ENV,
     ) -> None:
         self.repo = repo
+        self.notifier = notifier_from_env(os.environ) if notifier is _FROM_ENV else notifier
+        self._notifier_started = False
+        self._alert_tasks: set[asyncio.Task[None]] = set()
         self._client_factory = client_factory
         self._feed_factory = feed_factory
         self._runs: dict[str, _ActiveRun] = {}
@@ -94,9 +101,41 @@ class RunManager:
                 repository=self.repo,
                 run_name=f"paper-{symbol}",
                 app_config=config.model_dump(mode="json", by_alias=True),
+                on_alert=self.alert_hook(symbol),
             )
         )
         return await self._launch(engine, price_feed, symbol)
+
+    # --- alerts ---------------------------------------------------------------------
+
+    def alert_hook(self, symbol: str) -> Callable[[str, str], None]:
+        """The `on_alert` callback for a run on `symbol`: sends to Telegram when it is set up."""
+
+        def hook(kind: str, text: str) -> None:
+            if self.notifier is None:
+                return
+            task = asyncio.get_running_loop().create_task(
+                self._deliver(f"{symbol}: {kind.replace('_', ' ')} - {text}", "warning")
+            )
+            self._alert_tasks.add(task)
+            task.add_done_callback(self._alert_tasks.discard)
+
+        return hook
+
+    async def _deliver(self, message: str, severity: str) -> None:
+        if self.notifier is None:
+            return
+        if not self._notifier_started:
+            await self.notifier.start()
+            self._notifier_started = True
+        await self.notifier.send(message, severity)
+
+    async def send_test_alert(self) -> bool:
+        """Send a test message; False when Telegram is not set up."""
+        if self.notifier is None:
+            return False
+        await self._deliver("Wallex Grid Bot: this is a test message. Alerts are working.", "info")
+        return True
 
     async def _launch(self, engine: BotEngine, price_feed: Any, symbol: str) -> str:
         """Start an engine in the background and track it under its run id."""
@@ -123,6 +162,7 @@ class RunManager:
             rebuild_engine, self.repo, run_id, client, self._feed_factory, feed
         )
         symbol = str(engine.config.exchange.market_info().symbol)
+        engine.config.on_alert = self.alert_hook(symbol)
         return await self._launch(engine, price_feed, symbol)
 
     async def latest_price(self, symbol: str) -> dict[str, Any] | None:
@@ -420,3 +460,7 @@ class RunManager:
             await self._settle(run)
         for task in list(self._backtest_tasks):
             task.cancel()
+        if self.notifier is not None and self._notifier_started:
+            await asyncio.gather(*self._alert_tasks, return_exceptions=True)
+            await self.notifier.stop()
+            self._notifier_started = False

@@ -1,5 +1,6 @@
 """Bot engine configuration."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,4 +28,7 @@ class EngineConfig:
     checkpoint_every_ticks: int = 20  # also saved whenever anything changes (fills, orders...)
     keep_fills: int = 200  # in-memory history caps for runs that never end
     keep_events: int = 500
+    on_alert: Callable[[str, str], None] | None = (
+        None  # (kind, text): halted / failed / out_of_range
+    )
     snapshot_every_ms: int = 30_000  # price/equity history is recorded at most this often

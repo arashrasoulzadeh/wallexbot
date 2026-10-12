@@ -29,7 +29,7 @@ PAGES = {
     "/history": "hist.title",
     "/market": "mk.title",
     "/markets": "mkts.title",
-    "/settings": "na.title",
+    "/settings": "set.title",
 }
 
 
@@ -67,7 +67,7 @@ def test_navigation_marks_the_current_page(client):
     html = client.get("/paper").text
     assert re.search(r'class="active"[^>]*data-i18n="nav.paper"', html)
     assert 'href="/runs"' in html and 'href="/history"' in html
-    assert 'href="/settings"' not in html  # unfinished pages are not linked
+    assert 'href="/settings"' in html
 
 
 def test_static_assets_are_served(client):
@@ -131,6 +131,7 @@ def test_every_translation_key_used_by_the_pages_exists(i18n):
             "markets",
             "history",
             "runs",
+            "settings",
         )
     }
     missing = sorted(k for k in used if k not in i18n["en"])

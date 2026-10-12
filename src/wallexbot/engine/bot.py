@@ -124,6 +124,7 @@ class BotEngine:
             self._log(f"engine error: {type(exc).__name__}: {exc}")
             self.session.stop()
             self._finish(EngineState.FAILED, "engine failed", cancel_orders=False)
+            self._alert("failed", f"{type(exc).__name__}: {exc}")
             raise
 
         if self.state in (EngineState.RUNNING, EngineState.PAUSED):
@@ -205,6 +206,7 @@ class BotEngine:
         self.state = EngineState.HALTED
         self.halt_reason = reason
         self._log(f"HALTED: {reason}")
+        self._alert("halted", reason)
         self._sync_session()
         self._save_checkpoint()
         task = self._task
@@ -337,6 +339,8 @@ class BotEngine:
         if new_events > 0:
             for message in self.session.events[-new_events:]:
                 self._events.append(message)
+                if "left the grid range" in message:
+                    self._alert("out_of_range", message)
                 if self._recorder:
                     self._recorder.event("session", message)
             del self._events[: max(0, len(self._events) - self.config.keep_events)]
@@ -466,6 +470,16 @@ class BotEngine:
         if self._ticks > 0:
             self._maybe_snapshot(self._last_tick_ts, force=True)
         self._save_checkpoint()
+
+    def _alert(self, kind: str, text: str) -> None:
+        """Tell whoever listens (Telegram) that a human should look; never lets that break the bot."""
+        hook = self.config.on_alert
+        if hook is None:
+            return
+        try:
+            hook(kind, text)
+        except Exception as exc:  # noqa: BLE001 - an alert channel being down must not stop trading
+            self._events.append(f"alert not delivered: {type(exc).__name__}: {exc}")
 
     def _log(self, message: str) -> None:
         self._events.append(message)

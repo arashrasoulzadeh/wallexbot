@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, ValidationError
 from starlette.websockets import WebSocketDisconnect
 
+from wallexbot.alerts.setup import ALERT_KINDS
 from wallexbot.analytics.run_history import (
     DEFAULT_TZ,
     Point,
@@ -31,6 +32,7 @@ from wallexbot.api.manager import InvalidRunState, RunManager, UnknownRun
 from wallexbot.config.defaults import default_config
 from wallexbot.config.schema import validate_config
 from wallexbot.engine.recovery import RecoveryError
+from wallexbot.market_defaults import WORST_CASE_FEE
 from wallexbot.storage.repository import InMemoryRepository, Repository
 from wallexbot.wallex.client import WallexApiError, WallexRestClient
 
@@ -524,7 +526,22 @@ def create_app(
 
     @app.post("/api/notify/test")
     async def test_notification(request: Request) -> Any:
-        return {"message": "Telegram is not configured: no notification was sent"}
+        if not await manager.send_test_alert():
+            return {
+                "sent": False,
+                "message": "Telegram is not configured: no notification was sent",
+            }
+        return {"sent": True, "message": "Test message sent"}
+
+    @app.get("/api/settings")
+    async def get_settings() -> Any:
+        """What can be known about the setup without exposing any secret."""
+        return {
+            "telegram": {"configured": manager.notifier is not None},
+            "alerts": ALERT_KINDS,
+            "mode": "paper",
+            "fees": {q: str(f) for q, f in WORST_CASE_FEE.items()},
+        }
 
     # Admin endpoints
     @app.post("/api/admin/backup")
@@ -607,6 +624,6 @@ def create_app(
     page("/history", "history.html", "history")
     page("/market", "market.html", "market")
     page("/markets", "markets.html", "markets")
-    page("/settings", "unavailable.html", "settings")
+    page("/settings", "settings.html", "settings")
 
     return app

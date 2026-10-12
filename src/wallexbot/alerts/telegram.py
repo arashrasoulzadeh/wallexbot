@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class TelegramNotifier:
     """Sends alerts via Telegram Bot API."""
 
-    bot_token: str
+    bot_token: str = field(repr=False)
     chat_id: str
     transport: object | None = None  # httpx.AsyncClient or mock
     clock: Clock = field(default_factory=SystemClock)

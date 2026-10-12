@@ -97,3 +97,5 @@ td.num, th.num { text-align: end; }
 thead th { cursor: pointer; user-select: none; white-space: nowrap; }
 thead th[aria-sort="ascending"]::after { content: " \25B2"; font-size: .7em; }
 thead th[aria-sort="descending"]::after { content: " \25BC"; font-size: .7em; }
+
+pre.code { background: var(--panel-2, rgba(127,127,127,.12)); padding: .6rem .8rem; border-radius: 6px; overflow-x: auto; direction: ltr; text-align: left; }
