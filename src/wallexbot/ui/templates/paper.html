@@ -24,6 +24,7 @@
 <div id="idle" class="note" data-i18n="paper.noRun"></div>
 
 <div id="live" style="display:none">
+    <div id="waiting"></div>
     <div class="stats" id="stats"></div>
     <div class="grid">
         <div class="card"><h2 data-i18n="paper.grid">Grid ladder</h2><div class="scroll"><table class="ladder" id="ladder"></table></div></div>
@@ -106,6 +107,7 @@ wb.ready.then(function () {
             stat('paper.orders', String(s.open_orders))
         ].forEach(function (n) { stats.appendChild(n); });
         if (s.halt_reason) { say('error', wb.t('paper.haltedBecause') + ': ' + s.halt_reason); }
+        showWaiting(s);
 
         // ladder: highest price first, with the current price marked in between
         const price = run.grid.price === null ? null : Number(run.grid.price);
@@ -138,6 +140,29 @@ wb.ready.then(function () {
             run.fills.slice(0, 20).map(function (f) { return [wb.time(f.time), side(f.side), wb.num(f.price, 4), wb.num(f.quantity, 4), wb.num(f.fee, 6) + ' ' + f.fee_asset]; }));
         const events = wb.clear($('events'));
         s.events.slice().reverse().forEach(function (e) { events.appendChild(wb.el('li', { text: e })); });
+    }
+
+    // before the first live trade arrives the page would be blank: say what is happening and show
+    // the latest public price so the user can see the feed is alive
+    let publicAt = 0;
+    let publicPrice = null;        // last answer, kept so the line does not blink between refreshes
+    function publicLine() {
+        if (!publicPrice) { return null; }
+        return wb.el('p', { class: 'muted', text: wb.t('paper.lastPublic') + ': ' + wb.num(publicPrice.price, 4) + ' (' + wb.time(publicPrice.timestamp) + ')' });
+    }
+    async function showWaiting(s) {
+        const box = wb.clear($('waiting'));
+        if (s.ticks_processed > 0 || (s.state !== 'running' && s.state !== 'paused')) { return; }
+        box.appendChild(wb.el('div', { class: 'note', text: wb.t('paper.waiting') }));
+        const cached = publicLine();
+        if (cached) { box.appendChild(cached); }
+        if (Date.now() - publicAt < 3000) { return; }
+        publicAt = Date.now();
+        try {
+            publicPrice = await wb.api('/api/price/' + encodeURIComponent((last && last.market) || 'USDTTMN'));
+            const fresh = publicLine();
+            if (fresh && !cached && $('waiting').firstChild) { $('waiting').appendChild(fresh); }
+        } catch (e) { /* the price line is a courtesy; the run itself does not depend on it */ }
     }
 
     function setConn(on) {
@@ -201,14 +226,16 @@ wb.ready.then(function () {
     }
 
     $('start').addEventListener('click', async function () {
-        say('', '');
+        say('note', wb.t('paper.starting'));
+        $('start').disabled = true;
         try {
             const config = await wb.config.current();
             const started = await wb.post('/api/paper-runs', { config: config, feed: $('feed').value });
             runId = started.id; finished = false;
             wb.write(wb.KEYS.paperRun, runId);
+            say('', '');
             connect();
-        } catch (e) { say('error', e.message); }
+        } catch (e) { say('error', e.message); $('start').disabled = false; }
     });
     $('pause').addEventListener('click', function () { control('pause'); });
     $('resume').addEventListener('click', function () { control('resume'); });

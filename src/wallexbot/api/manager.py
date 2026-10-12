@@ -116,6 +116,14 @@ class RunManager:
         symbol = str(engine.config.exchange.market_info().symbol)
         return await self._launch(engine, price_feed, symbol)
 
+    async def latest_price(self, symbol: str) -> dict[str, Any] | None:
+        """The most recent public trade of a market (no run needed), or None if there is none."""
+        client = self._client_factory()
+        trades = await asyncio.to_thread(client.get_latest_trades, symbol, 1)
+        if not trades:
+            return None
+        return {"symbol": symbol, "price": str(trades[0].price), "timestamp": trades[0].timestamp}
+
     def recoverable(self) -> list[dict[str, Any]]:
         """Interrupted runs found in the repository that can be recovered."""
         live = {

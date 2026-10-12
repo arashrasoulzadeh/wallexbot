@@ -165,7 +165,10 @@
     "col.fills": "Fills",
     "col.buys": "Buys",
     "col.sells": "Sells",
-    "col.volume": "Volume"
+    "col.volume": "Volume",
+    "paper.starting": "Starting... connecting to the live price feed.",
+    "paper.waiting": "Waiting for the first live trade. USDTTMN trades every 10-20 seconds, so this can take a moment; the grid is built around that first price.",
+    "paper.lastPublic": "Latest public price"
   },
   "fa": {
     "app.name": "ربات گرید والکس",
@@ -333,6 +336,9 @@
     "col.fills": "معاملات",
     "col.buys": "خرید",
     "col.sells": "فروش",
-    "col.volume": "حجم"
+    "col.volume": "حجم",
+    "paper.starting": "در حال شروع... اتصال به قیمت زنده.",
+    "paper.waiting": "منتظر اولین معامله زنده. بازار تتر هر ۱۰ تا ۲۰ ثانیه معامله دارد، پس ممکن است کمی طول بکشد؛ شبکه دور همان قیمت اول چیده می‌شود.",
+    "paper.lastPublic": "آخرین قیمت عمومی"
   }
 }

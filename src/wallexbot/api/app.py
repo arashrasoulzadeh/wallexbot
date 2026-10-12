@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -31,7 +32,7 @@ from wallexbot.config.defaults import default_config
 from wallexbot.config.schema import validate_config
 from wallexbot.engine.recovery import RecoveryError
 from wallexbot.storage.repository import InMemoryRepository, Repository
-from wallexbot.wallex.client import WallexRestClient
+from wallexbot.wallex.client import WallexApiError, WallexRestClient
 
 FINAL_STATES = ("stopped", "halted", "failed")
 
@@ -146,6 +147,17 @@ def create_app(
             }
             for c in candles
         ]
+
+    @app.get("/api/price/{symbol}")
+    async def latest_price(symbol: str) -> Any:
+        """The latest public trade price, so the UI can show a price before a run's first tick."""
+        try:
+            result = await manager.latest_price(symbol)
+        except (WallexApiError, httpx.HTTPError, OSError) as e:
+            raise HTTPException(502, str(e)) from e
+        if result is None:
+            raise HTTPException(404, "no recent trades")
+        return result
 
     # Runs --------------------------------------------------------------------------
 

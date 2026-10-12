@@ -250,3 +250,45 @@ def test_a_started_run_saves_its_config_so_it_can_be_recovered_later(client):
     run_id = start_run(client)
     stored = client.repo.get_checkpoint(run_id)["app_config"]  # what recovery will read
     assert validate_config(stored).market.symbol == "USDTTMN"
+
+
+# --- the public price, shown while a run waits for its first live trade ----------------------
+
+
+def test_the_latest_public_price_is_available_without_a_run(client):
+    r = client.get("/api/price/USDTTMN")
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {"symbol": "USDTTMN", "price": "262154", "timestamp": 1_700_000_123_000}
+
+
+def test_no_recent_trades_is_a_404(repo=None):
+    from wallexbot.storage.repository import InMemoryRepository
+
+    empty = FakeClient()
+    empty.trades = []
+    manager = RunManager(
+        InMemoryRepository(),
+        client_factory=lambda: empty,
+        feed_factory=lambda k, s, c: HoldingFeed([]),
+    )
+    with TestClient(create_app(repo=InMemoryRepository(), engine_manager=manager)) as c:
+        assert c.get("/api/price/USDTTMN").status_code == 404
+
+
+def test_a_failing_public_api_is_a_502_with_the_reason():
+    from wallexbot.storage.repository import InMemoryRepository
+    from wallexbot.wallex.client import WallexApiError
+
+    class Broken(FakeClient):
+        def get_latest_trades(self, symbol, limit=50):
+            raise WallexApiError("HTTP 503 for /v1/trades")
+
+    manager = RunManager(
+        InMemoryRepository(),
+        client_factory=lambda: Broken(),
+        feed_factory=lambda k, s, c: HoldingFeed([]),
+    )
+    with TestClient(create_app(repo=InMemoryRepository(), engine_manager=manager)) as c:
+        r = c.get("/api/price/USDTTMN")
+        assert r.status_code == 502 and "503" in r.json()["detail"]

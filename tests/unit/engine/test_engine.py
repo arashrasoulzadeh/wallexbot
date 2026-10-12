@@ -353,6 +353,7 @@ async def test_snapshot_is_json_ready_and_has_the_live_picture():
 
     snap = engine.snapshot()
     json.dumps(snap)  # everything is plain JSON types
+    assert snap["market"] == "USDTTMN"  # the UI needs it to look up the public price
     assert snap["status"]["state"] == "stopped" and snap["status"]["last_price"] == "97"
     assert len(snap["orders"]) == 8
     assert {"level", "side", "price", "quantity", "filled"} <= set(snap["orders"][0])

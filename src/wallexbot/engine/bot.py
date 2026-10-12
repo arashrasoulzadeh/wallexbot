@@ -267,6 +267,7 @@ class BotEngine:
         ]
         return {
             "run_id": self.run_id,
+            "market": str(exchange.market_info().symbol),
             "status": {
                 "state": status.state.value,
                 "halt_reason": status.halt_reason,
