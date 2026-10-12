@@ -83,14 +83,34 @@ def test_the_toman_market_gets_toman_sized_defaults():
     cfg = suggest_config(BY_SYMBOL["USDTTMN"])["config"]
     assert D(cfg["simulation"]["initial_balance_quote"]) >= 2_000_000
     assert D(cfg["simulation"]["min_notional"]) == 90000  # Wallex's own hint for TMN markets
+    assert D(cfg["simulation"]["fee_maker"]) == D(
+        "0.0035"
+    )  # the top published TMN tier: worst case
+    assert D("1.0") < _spacing_pct(cfg, BY_SYMBOL["USDTTMN"]) < D("2.0")  # clears 2 x 0.35% x 1.5
+
+
+def _spacing_pct(cfg, market):
     grid = cfg["strategy"]["grid"]
-    spacing_pct = (
+    return (
         (D(grid["upper_price"]) - D(grid["lower_price"]))
         / (grid["grid_count"] - 1)
-        / BY_SYMBOL["USDTTMN"].price
+        / market.price
         * 100
     )
-    assert D("0.3") < spacing_pct < D("0.8")  # aims at about 0.45% between levels
+
+
+def test_usdt_markets_assume_the_usdt_worst_case_fee():
+    cfg = suggest_config(BY_SYMBOL["PEPEUSDT"])["config"]
+    assert D(cfg["simulation"]["fee_maker"]) == D("0.0020")
+    assert _spacing_pct(cfg, BY_SYMBOL["PEPEUSDT"]) >= D("0.6")  # 2 x 0.2% x 1.5
+
+
+def test_a_busy_coin_gets_wider_spacing_than_a_quiet_one():
+    market = BY_SYMBOL["USDTTMN"]
+    quiet = suggest_config(market, hourly_span_pct=D("0.2"))["config"]
+    busy = suggest_config(market, hourly_span_pct=D("3"))["config"]
+    assert _spacing_pct(busy, market) > _spacing_pct(quiet, market)
+    assert _spacing_pct(quiet, market) >= D("1.0")  # never below the fee floor, however quiet
 
 
 def test_a_usdt_market_gets_usdt_sized_defaults_and_its_own_precision():

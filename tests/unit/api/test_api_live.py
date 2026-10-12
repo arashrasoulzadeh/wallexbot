@@ -363,7 +363,7 @@ class _PriceFeed:
 
     def __init__(self, price, symbol):
         self.prices, self.symbol, self.closed = (
-            [price, price * _D("0.995"), price * _D("1.004")],
+            [price, price * _D("0.98"), price * _D("1.02")],  # wider than the fee-aware spacing
             symbol,
             asyncio.Event(),
         )
@@ -446,7 +446,7 @@ def test_a_paper_run_starts_and_trades_from_a_coins_defaults(coins_client, symbo
     )
     assert run["market"] == symbol and run["status"]["state"] == "running"
     assert run["orders"] and run["status"]["rejected_orders"] == 0
-    assert run["status"]["fills"] >= 1  # the -0.5% / +0.4% swings cross at least one level
+    assert run["status"]["fills"] >= 1  # the -2% / +2% swings cross at least one level
     coins_client.post(f"/api/runs/{run_id}/stop")
 
 

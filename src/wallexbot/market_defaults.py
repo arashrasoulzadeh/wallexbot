@@ -12,7 +12,15 @@ from typing import Any
 from wallexbot.config.defaults import default_config
 from wallexbot.wallex.models import Market
 
-TARGET_SPACING = Decimal("0.0045")  # about 0.45% between levels, ~3x the round-trip fee
+TARGET_SPACING = Decimal("0.0045")  # spacing when fees are tiny; real fees raise it (see below)
+# Worst published Wallex tier per quote currency (a third-party article, about a year old; the
+# account's real fee is read from the account, which needs a key). Assuming the worst case means a
+# grid that is profitable here cannot be unprofitable on a better tier.
+WORST_CASE_FEE = {"TMN": Decimal("0.0035"), "USDT": Decimal("0.0020")}
+FALLBACK_FEE = Decimal("0.0035")
+FEE_MARGIN = Decimal("1.5") * Decimal("1.1")  # the validator's break-even margin, plus 10%
+HOURLY_SHARE = Decimal("0.75")  # target spacing as a share of the coin's usual hourly high-low span
+MAX_SPACING = Decimal("0.03")
 MIN_HALF_WIDTH = Decimal("0.01")  # the range is at least +-1% ...
 MAX_HALF_WIDTH = Decimal("0.05")  # ... and at most +-5% around the price
 DEFAULT_HALF_WIDTH = Decimal("0.02")  # used when Wallex gives no 24 h high/low
@@ -28,8 +36,11 @@ def _plain(value: Decimal) -> str:
     return format(value, "f")
 
 
-def suggest_config(info: Market) -> dict[str, Any]:
-    """{"config": <full config dict>, "notes": [{"code", "params"}]} for this market."""
+def suggest_config(info: Market, hourly_span_pct: Decimal | None = None) -> dict[str, Any]:
+    """{"config": <full config dict>, "notes": [{"code", "params"}]} for this market.
+
+    `hourly_span_pct` is how far the coin usually travels within an hour, in percent (from the
+    last week's candles); when known, busier coins get wider spacing."""
     symbol = str(info.symbol)
     price = info.price
     if price is None or price <= 0:
@@ -41,10 +52,16 @@ def suggest_config(info: Market) -> dict[str, Any]:
     min_notional = info.min_notional_hint or FALLBACK_MIN_NOTIONAL.get(quote, Decimal(5))
     notes: list[dict[str, Any]] = []
 
+    fee = WORST_CASE_FEE.get(quote, FALLBACK_FEE)
+    spacing = max(TARGET_SPACING, 2 * fee * FEE_MARGIN)  # never below what the fees demand
+    if hourly_span_pct is not None and hourly_span_pct > 0:
+        spacing = max(spacing, min(hourly_span_pct / 100 * HOURLY_SHARE, MAX_SPACING))
+
     half = DEFAULT_HALF_WIDTH
     if info.high_24h and info.low_24h and info.high_24h >= info.low_24h:
         observed = (info.high_24h - info.low_24h) / (2 * price)
         half = min(max(observed * Decimal("1.5"), MIN_HALF_WIDTH), MAX_HALF_WIDTH)
+    half = max(half, spacing * Decimal("1.05"))  # room for at least three levels at this spacing
 
     def at_tick(value: Decimal) -> Decimal:
         return value.quantize(tick, rounding=ROUND_HALF_UP)
@@ -58,7 +75,7 @@ def suggest_config(info: Market) -> dict[str, Any]:
         notes.append({"code": "range_widened_for_tick", "params": {"tick": tick}})
 
     range_pct = (upper - lower) / price
-    count = int((range_pct / TARGET_SPACING).to_integral_value(rounding=ROUND_HALF_UP)) + 1
+    count = int(range_pct / spacing) + 1  # rounded down: real spacing is never below the target
     count = max(MIN_LEVELS, min(MAX_LEVELS, count))
     count = min(count, int((upper - lower) / (2 * tick)) + 1)  # at least 2 ticks between levels
     count = max(count, MIN_LEVELS)
@@ -87,6 +104,8 @@ def suggest_config(info: Market) -> dict[str, Any]:
     cfg["simulation"].update(
         initial_balance_quote=_plain(capital),
         initial_balance_base="0",
+        fee_maker=_plain(fee),
+        fee_taker=_plain(fee),
         min_notional=_plain(min_notional),
         min_quantity=_plain(step),
     )

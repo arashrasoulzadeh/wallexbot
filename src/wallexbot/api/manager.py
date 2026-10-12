@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
+import httpx
+
 from wallexbot.analytics.backtest import Backtester, BacktestResult
 from wallexbot.analytics.market_status import build_market_status, jsonable
 from wallexbot.analytics.replay import candles_to_ticks
@@ -25,7 +27,7 @@ from wallexbot.market_defaults import suggest_config
 from wallexbot.recover import rebuild_engine
 from wallexbot.setup import GridSetup, find_market
 from wallexbot.storage.repository import Repository
-from wallexbot.wallex.client import WallexRestClient
+from wallexbot.wallex.client import WallexApiError, WallexRestClient
 from wallexbot.wallex.live_feed import make_price_feed
 from wallexbot.wallex.price_feed import PriceFeedReplay
 
@@ -172,7 +174,14 @@ class RunManager:
         info = self._market_objects.get(symbol)
         if info is None:
             return None
-        suggestion = suggest_config(info)  # ValueError("no price") for inactive markets
+        span: Decimal | None = None
+        try:  # busier coins get wider spacing; without the week's candles the fee floor still applies
+            week = await self.market_week(symbol)
+            if week and week.get("hours"):
+                span = Decimal(week["avg_hour_range_pct"])
+        except (WallexApiError, httpx.HTTPError, OSError):
+            span = None
+        suggestion = suggest_config(info, span)  # ValueError("no price") for inactive markets
         errors: list[str] = []
         try:
             validate_config(suggestion["config"])
