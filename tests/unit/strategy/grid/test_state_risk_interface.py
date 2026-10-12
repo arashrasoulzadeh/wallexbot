@@ -339,7 +339,7 @@ class TestStrategyInterface:
         # Simulate fill at buy level 1 (adjacent to gap)
         actions = strategy.on_fill(
             level_index=1,
-            fill_qty=Decimal("10.0000"),
+            fill_qty=strategy.state.order_qty[1],
             fill_fee=Decimal("0.95"),
             fill_fee_asset="TMN",
         )

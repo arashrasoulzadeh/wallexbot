@@ -1,6 +1,7 @@
 """Grid state model."""
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Optional
 
 from wallexbot.strategy.grid.parameters import Level
@@ -18,9 +19,21 @@ class GridState:
     levels: list[Level]
     active_orders: dict[int, str] = field(default_factory=dict)  # level_index -> order_id
     order_sides: dict[int, str] = field(default_factory=dict)  # level_index -> "buy"/"sell"
+    order_qty: dict[int, Decimal] = field(default_factory=dict)  # level_index -> ordered quantity
+    filled_qty: dict[int, Decimal] = field(default_factory=dict)  # partial fills so far
+    filled_fee: dict[int, Decimal] = field(default_factory=dict)  # fees of those fills
 
-    def set_active_order(self, level_index: int, order_id: str, side: str | None = None) -> None:
-        """Set active order for a level. `side` defaults to the level's initial side."""
+    def set_active_order(
+        self,
+        level_index: int,
+        order_id: str,
+        side: str | None = None,
+        quantity: Decimal | None = None,
+    ) -> None:
+        """Set active order for a level. `side` defaults to the level's initial side.
+
+        `quantity` is the ordered amount; it lets the strategy tell partial fills from full ones.
+        """
         if level_index in self.active_orders:
             raise GridStateError(f"Level {level_index} already has active order {self.active_orders[level_index]}")
         if level_index < 0 or level_index >= len(self.levels):
@@ -30,11 +43,26 @@ class GridState:
             raise GridStateError(f"Order on level {level_index} needs a buy/sell side")
         self.active_orders[level_index] = order_id
         self.order_sides[level_index] = order_side
+        if quantity is not None:
+            self.order_qty[level_index] = quantity
+        self.filled_qty.pop(level_index, None)
+        self.filled_fee.pop(level_index, None)
 
     def clear_active_order(self, level_index: int) -> Optional[str]:
         """Clear active order for a level, return the order_id."""
         self.order_sides.pop(level_index, None)
+        self.order_qty.pop(level_index, None)
+        self.filled_qty.pop(level_index, None)
+        self.filled_fee.pop(level_index, None)
         return self.active_orders.pop(level_index, None)
+
+    def record_partial_fill(self, level_index: int, qty: Decimal, fee: Decimal) -> tuple[Decimal, Decimal]:
+        """Add a fill to the running totals for a level; returns (total_qty, total_fee)."""
+        total_qty = self.filled_qty.get(level_index, Decimal("0")) + qty
+        total_fee = self.filled_fee.get(level_index, Decimal("0")) + fee
+        self.filled_qty[level_index] = total_qty
+        self.filled_fee[level_index] = total_fee
+        return total_qty, total_fee
 
     def get_level_for_order(self, order_id: str) -> Optional[int]:
         """Find level index for an order_id."""

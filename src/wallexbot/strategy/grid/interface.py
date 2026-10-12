@@ -126,7 +126,9 @@ class GridStrategy:
 
         # Populate active orders from initial placement
         for order in placement.orders:
-            self.state.set_active_order(order.level_index, order.client_id, order.side.value.lower())
+            self.state.set_active_order(
+                order.level_index, order.client_id, order.side.value.lower(), order.quantity
+            )
 
         # Convert placement orders to actions
         actions: list[Action] = []
@@ -173,19 +175,37 @@ class GridStrategy:
         fill_fee_asset: str,
         timestamp: int = 0,
     ) -> list[Action]:
-        """Handle a full fill of the order on `level_index`."""
+        """Handle a fill of the order on `level_index` (decision D1: wait for the full fill).
+
+        Partial fills are recorded and produce no actions. When the running total reaches the
+        ordered quantity (within one amount-precision step), a single counter-order is placed
+        for the total filled quantity.
+        """
+        if self.state is None or level_index not in self.state.active_orders:
+            return []  # unknown level, or duplicate/late event for an order we already answered
+
+        total_qty, total_fee = self.state.record_partial_fill(level_index, fill_qty, fill_fee)
+        ordered = self.state.order_qty.get(level_index)
+        if ordered is not None:
+            step = Decimal(1) / (Decimal(10) ** self.market.amount_precision)
+            if total_qty < ordered - step:
+                return []  # still partially filled: keep the order and wait
+        return self._complete_fill(level_index, total_qty, total_fee, fill_fee_asset)
+
+    def _complete_fill(
+        self, level_index: int, qty: Decimal, fee: Decimal, fee_asset: str
+    ) -> list[Action]:
+        """Answer a finished (or cancelled-after-partial) order with its counter-order."""
         from wallexbot.strategy.grid.fill_handling import handle_fill
 
-        if self.state is None:
-            return []
-
+        assert self.state is not None
         actions: list[Action] = []
         self._seq += 1
 
         result = handle_fill(
             fill_level=level_index,
-            fill_qty=fill_qty,
-            fill_fee=fill_fee,
+            fill_qty=qty,
+            fill_fee=fee,
             levels=self.state.levels,
             active_orders=self.state.active_orders,
             market=self.market,
@@ -193,13 +213,12 @@ class GridStrategy:
             min_notional_rule=self.min_notional_rule,
             params=self.params,
             fill_side=self.state.order_sides.get(level_index),
-            fill_fee_asset=fill_fee_asset,
+            fill_fee_asset=fee_asset,
             run_id=self.run_id,
             seq=self._seq,
         )
 
-        if level_index in self.state.active_orders:
-            self.state.clear_active_order(level_index)
+        self.state.clear_active_order(level_index)
 
         for action in result.actions:
             if action.type == "place":
@@ -214,7 +233,7 @@ class GridStrategy:
                     level_index=action.level_index,
                 ))
                 self.state.set_active_order(
-                    action.level_index, action.client_id, action.side.value.lower()
+                    action.level_index, action.client_id, action.side.value.lower(), action.quantity
                 )
             elif action.type == "cancel":
                 actions.append(CancelAction(
@@ -241,9 +260,14 @@ class GridStrategy:
         return actions
 
     def on_cancel(self, level_index: int, timestamp: int = 0) -> list[Action]:
-        """Handle order cancellation."""
+        """Handle order cancellation; a partly filled order still gets a counter-order."""
         if self.state is None:
             return []
+
+        filled = self.state.filled_qty.get(level_index, Decimal("0"))
+        if filled > 0 and level_index in self.state.active_orders:
+            fee = self.state.filled_fee.get(level_index, Decimal("0"))
+            return self._complete_fill(level_index, filled, fee, "")
 
         self.state.clear_active_order(level_index)
         return []

@@ -58,7 +58,7 @@ class TestGridScenarios:
         # Active sells at 105, 110
 
         # Fill sell at 105 (level 3)
-        actions = strategy.on_fill(3, Decimal("10.0000"), Decimal("0.021"), "USDT")
+        actions = strategy.on_fill(3, strategy.state.order_qty[3], Decimal("0.021"), "USDT")
         # Sell at 105 is answered by a buy one level down, at 100 (level 2)
         place_actions = [a for a in actions if a.type == "place"]
         assert len(place_actions) == 1
@@ -66,7 +66,7 @@ class TestGridScenarios:
         assert place_actions[0].level_index == 2
 
         # Fill sell at 110 (level 4)
-        actions = strategy.on_fill(4, Decimal("10.0000"), Decimal("0.022"), "USDT")
+        actions = strategy.on_fill(4, strategy.state.order_qty[4], Decimal("0.022"), "USDT")
         place_actions = [a for a in actions if a.type == "place"]
         # Top-level sell is answered by a buy one level down, at 105 (level 3)
         assert len(place_actions) == 1
@@ -79,7 +79,7 @@ class TestGridScenarios:
         # Active buys at 90, 95
 
         # Fill buy at 95 (level 1)
-        actions = strategy.on_fill(1, Decimal("10.0000"), Decimal("0.95"), "TMN")
+        actions = strategy.on_fill(1, strategy.state.order_qty[1], Decimal("0.95"), "TMN")
         place_actions = [a for a in actions if a.type == "place"]
         assert len(place_actions) == 1
         assert place_actions[0].side.value == "SELL"
@@ -90,12 +90,12 @@ class TestGridScenarios:
         strategy, _ = self._setup_strategy(market, params, Decimal("100.00"))
 
         # Fill buy at 95 (level 1) -> sell placed at 100 (level 2)
-        actions = strategy.on_fill(1, Decimal("10.0000"), Decimal("0.95"), "TMN")
+        actions = strategy.on_fill(1, strategy.state.order_qty[1], Decimal("0.95"), "TMN")
         place_actions = [a for a in actions if a.type == "place"]
         assert [(a.side.value, a.level_index) for a in place_actions] == [("SELL", 2)]
 
         # That sell fills (level 2) -> buy placed back at 95 (level 1): one full cycle
-        actions = strategy.on_fill(2, Decimal("10.0000"), Decimal("0.021"), "USDT")
+        actions = strategy.on_fill(2, strategy.state.order_qty[2], Decimal("0.021"), "USDT")
         place_actions = [a for a in actions if a.type == "place"]
         assert [(a.side.value, a.level_index) for a in place_actions] == [("BUY", 1)]
         assert strategy.profit_tracker.total_cycles == 1
@@ -107,7 +107,7 @@ class TestGridScenarios:
 
         # Price jumps from 100 to 108 - only sell at 105 fills
         # (assuming orders only at grid levels)
-        actions = strategy.on_fill(3, Decimal("10.0000"), Decimal("0.021"), "USDT")
+        actions = strategy.on_fill(3, strategy.state.order_qty[3], Decimal("0.021"), "USDT")
         place_actions = [a for a in actions if a.type == "place"]
         assert len(place_actions) == 1
         assert place_actions[0].level_index == 2  # Buy at 100
@@ -117,7 +117,7 @@ class TestGridScenarios:
         strategy, _ = self._setup_strategy(market, params, Decimal("100.00"))
 
         # Fill buy at 95
-        actions = strategy.on_fill(1, Decimal("10.0000"), Decimal("0.95"), "TMN")
+        actions = strategy.on_fill(1, strategy.state.order_qty[1], Decimal("0.95"), "TMN")
         place_actions = [a for a in actions if a.type == "place"]
         assert len(place_actions) == 1
         # Fill sell at 105 (the placed order)
@@ -125,16 +125,20 @@ class TestGridScenarios:
         # This test is more integration-style
 
     def test_partial_fill_handling(self, market, params, fee_schedule, min_notional):
-        """Current behavior: places counter-order for any fill (TODO: implement wait-for-full-fill per D1)."""
+        """Decision D1: wait for the full fill, then place one counter-order for the total."""
         strategy, _ = self._setup_strategy(market, params, Decimal("100.00"))
 
-        # Fill at buy level 1 (95) - adjacent to gap
-        actions = strategy.on_fill(1, Decimal("5.0000"), Decimal("0.475"), "TMN")
+        # Half of the buy at level 1 (95) fills: nothing happens yet (decision D1)
+        ordered = strategy.state.order_qty[1]
+        half = ordered / 2
+        actions = strategy.on_fill(1, half, Decimal("0.475"), "TMN")
+        assert [a for a in actions if a.type == "place"] == []
+
+        # The rest fills: one counter-order for the full quantity, one level up (100)
+        actions = strategy.on_fill(1, ordered - half, Decimal("0.475"), "TMN")
         place_actions = [a for a in actions if a.type == "place"]
-        # Current implementation places counter-order for any fill quantity
-        # TODO: Implement wait-for-full-fill policy (D1) - track cumulative fills
         assert len(place_actions) == 1
-        assert place_actions[0].quantity == Decimal("5.0000")
+        assert place_actions[0].quantity == ordered
         assert place_actions[0].level_index == 2
 
     def test_duplicate_fill_idempotent(self, market, params, fee_schedule, min_notional):
@@ -142,11 +146,12 @@ class TestGridScenarios:
         strategy, _ = self._setup_strategy(market, params, Decimal("100.00"))
 
         # First fill at level 1 (adjacent to gap, generates counter-order)
-        actions1 = strategy.on_fill(1, Decimal("10.0000"), Decimal("0.95"), "TMN")
+        qty = strategy.state.order_qty[1]
+        actions1 = strategy.on_fill(1, qty, Decimal("0.95"), "TMN")
         place_actions1 = [a for a in actions1 if a.type == "place"]
         assert len(place_actions1) == 1
         # Second fill (duplicate) - order already cleared
-        actions2 = strategy.on_fill(1, Decimal("10.0000"), Decimal("0.95"), "TMN")
+        actions2 = strategy.on_fill(1, qty, Decimal("0.95"), "TMN")
         place_actions2 = [a for a in actions2 if a.type == "place"]
         assert len(place_actions2) == 0
 
