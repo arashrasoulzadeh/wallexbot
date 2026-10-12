@@ -1,11 +1,15 @@
-"""Bot engine package."""
+"""Paper-trading engine package."""
 
-from wallexbot.engine.actions import ActionExecutor
-from wallexbot.engine.bot import BotEngine
+from wallexbot.engine.bot import BotEngine, EngineState, EngineStatus
 from wallexbot.engine.config import EngineConfig
+from wallexbot.engine.risk import RiskMonitor
+from wallexbot.engine.session import TradingSession
 
 __all__ = [
-    "EngineConfig",
-    "ActionExecutor",
     "BotEngine",
+    "EngineConfig",
+    "EngineState",
+    "EngineStatus",
+    "RiskMonitor",
+    "TradingSession",
 ]

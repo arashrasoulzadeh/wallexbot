@@ -1,7 +1,8 @@
-"""Tests for bot engine."""
+"""BotEngine: the async paper-trading loop (scripted feed, simulated exchange, no network)."""
 
-from decimal import Decimal
-from unittest.mock import Mock
+import asyncio
+from collections.abc import AsyncGenerator, Callable
+from decimal import Decimal as D
 
 import pytest
 
@@ -9,202 +10,261 @@ from tests.helpers.clock import FakeClock
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, Symbol
-from wallexbot.engine.actions import ActionExecutor
-from wallexbot.engine.bot import BotEngine, EngineConfig
+from wallexbot.engine import BotEngine, EngineConfig, EngineState
+from wallexbot.engine.risk import RiskMonitor
 from wallexbot.sim.exchange import SimulatedExchange
+from wallexbot.storage.repository import InMemoryRepository
 from wallexbot.strategy.grid.interface import GridStrategy
 from wallexbot.strategy.grid.parameters import GridMode, GridParameters
-from wallexbot.wallex.price_feed import PriceFeedReplay, PriceTick
+from wallexbot.wallex.price_feed import PriceTick
+
+SYMBOL = Symbol("USDTTMN")
+MARKET = Market(
+    symbol=SYMBOL, base="USDT", quote="TMN", price_precision=2, amount_precision=4, is_spot=True
+)
 
 
-class TestActionExecutor:
-    """Tests for action executor."""
+class ScriptedFeed:
+    """Yields the given prices as ticks; `before_tick(i)` runs just before tick i is delivered."""
 
-    @pytest.fixture
-    def exchange(self):
-        return Mock()
+    def __init__(
+        self,
+        prices: list[str],
+        before_tick: Callable[[int], None] | None = None,
+        then_raise: Exception | None = None,
+        then_wait: asyncio.Event | None = None,
+    ):
+        self.prices = prices
+        self.before_tick = before_tick
+        self.then_raise = then_raise
+        self.then_wait = then_wait
 
-    @pytest.fixture
-    def executor(self, exchange):
-        return ActionExecutor(exchange=exchange, clock=FakeClock())
+    async def subscribe(self, symbol: Symbol) -> None: ...
+    async def unsubscribe(self, symbol: Symbol) -> None: ...
 
-    def test_place_action_generates_idempotent_client_id(self, executor):
-        """Place action generates idempotent client_id."""
-        from wallexbot.domain.market import OrderType, Side, Symbol
-        from wallexbot.strategy.grid.interface import PlaceAction
-
-        action = PlaceAction(
-            type="place",
-            client_id="",  # Will be generated
-            symbol=Symbol("USDTTMN"),
-            side=Side.BUY,
-            order_type=OrderType.LIMIT,
-            price=Decimal("100.00"),
-            quantity=Decimal("10.0000"),
-            level_index=0,
-        )
-
-        # Execute should generate client_id
-        result = executor.execute_place(action)
-        assert result.client_id.startswith("GRID_")
-
-    def test_timeout_handling_looks_up_by_client_id(self, executor):
-        """Timeout on place -> look up by client_id before retry."""
-        # This would test the timeout handling logic
-        pass
+    async def ticks(self) -> AsyncGenerator[PriceTick, None]:
+        for i, p in enumerate(self.prices):
+            if self.before_tick:
+                self.before_tick(i)
+            yield PriceTick(
+                symbol=SYMBOL, price=D(p), timestamp=1_000_000 + i * 60_000, source="test"
+            )
+        if self.then_raise:
+            raise self.then_raise
+        if self.then_wait:
+            await self.then_wait.wait()
 
 
-class TestBotEngine:
-    """Tests for bot engine."""
-
-    @pytest.fixture
-    def market(self):
-        return Market(
-            symbol=Symbol("USDTTMN"),
-            base="USDT",
-            quote="TMN",
-            price_precision=2,
-            amount_precision=4,
-            is_spot=True,
-        )
-
-    @pytest.fixture
-    def params(self):
-        return GridParameters(
-            lower_price=Decimal("90.00"),
-            upper_price=Decimal("110.00"),
-            grid_count=5,
-            mode=GridMode.ARITHMETIC,
-            total_investment=Decimal("10000.00"),
-        )
-
-    @pytest.fixture
-    def strategy(self, market, params):
-        return GridStrategy(market=market, params=params)
-
-    @pytest.fixture
-    def exchange(self, market):
-        return SimulatedExchange(
-            market=market,
-            fee_schedule_config=FeeSchedule(
-                maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")
-            ),
-            min_notional_rule=MinNotionalRule(
-                min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
-            ),
-            initial_balances={
-                "TMN": Balance(free=Decimal("2000000.00"), locked=Decimal("0")),
-                "USDT": Balance(free=Decimal("100.00"), locked=Decimal("0")),
-            },
-        )
-
-    @pytest.fixture
-    def price_feed(self):
-        ticks = [
-            PriceTick(
-                symbol=Symbol("USDTTMN"), price=Decimal("100.00"), timestamp=1000, source="test"
-            ),
-            PriceTick(
-                symbol=Symbol("USDTTMN"), price=Decimal("99.00"), timestamp=1001, source="test"
-            ),
-            PriceTick(
-                symbol=Symbol("USDTTMN"), price=Decimal("95.00"), timestamp=1002, source="test"
-            ),
-            PriceTick(
-                symbol=Symbol("USDTTMN"), price=Decimal("105.00"), timestamp=1003, source="test"
-            ),
-        ]
-        return PriceFeedReplay(ticks)
-
-    @pytest.fixture
-    def engine(self, strategy, exchange, price_feed):
-        config = EngineConfig(
-            strategy=strategy,
+def make_engine(
+    feed,
+    *,
+    grid_count=9,
+    investment="90000",
+    tmn="2000000",
+    risk=None,
+    cancel_on_shutdown=True,
+    repository=None,
+):
+    clock = FakeClock()
+    exchange = SimulatedExchange(
+        market=MARKET,
+        fee_schedule_config=FeeSchedule(maker_rate=D("0.001"), taker_rate=D("0.002")),
+        min_notional_rule=MinNotionalRule(min_notional=D("10"), min_quantity=D("0.0001")),
+        initial_balances={
+            "TMN": Balance(free=D(tmn), locked=D(0)),
+            "USDT": Balance(free=D(0), locked=D(0)),
+        },
+        clock=clock,
+    )
+    params = GridParameters(
+        lower_price=D("90"),
+        upper_price=D("110"),
+        grid_count=grid_count,
+        mode=GridMode.ARITHMETIC,
+        total_investment=D(investment),
+    )
+    engine = BotEngine(
+        EngineConfig(
+            strategy=GridStrategy(MARKET, params),
             exchange=exchange,
-            price_feed=price_feed,
-            clock=FakeClock(),
+            price_feed=feed,
+            risk=risk,
+            cancel_on_shutdown=cancel_on_shutdown,
+            repository=repository,
         )
-        return BotEngine(config)
-
-    @pytest.mark.asyncio
-    async def test_startup_sequence(self, engine):
-        """Test startup sequence."""
-        await engine.start()
-        # Should have placed initial grid
-        assert engine.is_running()
-
-    @pytest.mark.asyncio
-    async def test_price_feed_to_strategy(self, engine):
-        """Price feed -> strategy -> actions -> exchange."""
-        await engine.start()
-
-        # Process first price tick
-        await engine.process_next_tick()
-        # Should update strategy state
-
-    @pytest.mark.asyncio
-    async def test_fill_handling_path(self, engine, exchange):
-        """Exchange event -> strategy on_fill -> actions."""
-        await engine.start()
-
-        # Simulate a fill
-        # This would need integration with exchange events
-
-    @pytest.mark.asyncio
-    async def test_polling_fallback(self, engine):
-        """Polling fallback when event stream down."""
-        pass
-
-    @pytest.mark.asyncio
-    async def test_kill_switch(self, engine):
-        """Kill switch stops placing, cancels all orders."""
-        await engine.start()
-        engine.kill()
-        assert engine.is_halted()
-
-    @pytest.mark.asyncio
-    async def test_graceful_shutdown(self, engine):
-        """Graceful shutdown on SIGINT/SIGTERM."""
-        await engine.start()
-        await engine.shutdown()
-        assert not engine.is_running()
-
-    @pytest.mark.asyncio
-    async def test_pause_resume_on_range_exit(self, engine):
-        """Pause/resume when price leaves range."""
-        await engine.start()
-
-        # Price moves out of range
-        # Should pause
-
-        # Price moves back in range
-        # Should resume (if configured)
+    )
+    return engine, exchange, clock
 
 
-class TestEngineIntegration:
-    """Integration tests for engine + sim exchange + scripted feed."""
+async def test_the_grid_is_built_around_the_first_real_price_not_a_fixed_one():
+    engine, exchange, _ = make_engine(ScriptedFeed(["105"]), cancel_on_shutdown=False)
+    await engine.run()
 
-    @pytest.mark.asyncio
-    async def test_uptrend_scenario(self):
-        """Up-trend through all levels."""
-        pass
+    prices = sorted(o.price for o in exchange.open_orders())
+    buys = [o.price for o in exchange.open_orders() if o.side.value == "BUY"]
+    assert (
+        max(buys)
+        < D("105")
+        < min(o.price for o in exchange.open_orders() if o.side.value == "SELL")
+    )
+    assert (
+        len(prices) == 8
+    )  # 105 is not a level, so every level carries an order... minus none skipped
 
-    @pytest.mark.asyncio
-    async def test_downtrend_scenario(self):
-        """Down-trend through all levels."""
-        pass
 
-    @pytest.mark.asyncio
-    async def test_sideways_oscillation(self):
-        """Sideways oscillation."""
-        pass
+async def test_fills_are_answered_with_counter_orders_and_profit_is_recorded():
+    engine, exchange, _ = make_engine(
+        ScriptedFeed(["100"] + ["97", "100.5"] * 3), cancel_on_shutdown=False
+    )
+    await engine.run()
 
-    @pytest.mark.asyncio
-    async def test_gap_jump(self):
-        """Gap/jump over several levels."""
-        pass
+    status = engine.status()
+    assert status.state is EngineState.STOPPED
+    assert status.completed_cycles == 3 and status.realized_pnl > 0
+    assert status.fills == 6
+    assert len(exchange.open_orders()) == 8  # ladder intact after every fill
 
-    @pytest.mark.asyncio
-    async def test_whipsaw(self):
-        """Whipsaw at one level."""
-        pass
+
+async def test_feed_end_cancels_orders_by_default():
+    engine, exchange, _ = make_engine(ScriptedFeed(["100", "99"]))
+    await engine.run()
+    assert exchange.open_orders() == []
+    assert engine.status().state is EngineState.STOPPED
+
+
+async def test_orders_can_be_left_resting_on_shutdown():
+    engine, exchange, _ = make_engine(ScriptedFeed(["100", "99"]), cancel_on_shutdown=False)
+    await engine.run()
+    assert len(exchange.open_orders()) == 8
+
+
+async def test_kill_switch_cancels_everything_and_ignores_later_prices():
+    holder = {}
+
+    def before_tick(i: int) -> None:
+        if i == 3:
+            holder["engine"].kill("manual test")
+
+    engine, exchange, _ = make_engine(
+        ScriptedFeed(["100", "97", "100.5", "97", "100.5"], before_tick)
+    )
+    holder["engine"] = engine
+    await engine.run()
+
+    status = engine.status()
+    assert status.state is EngineState.HALTED and "manual test" in status.halt_reason
+    assert exchange.open_orders() == []
+    assert status.ticks_processed == 3  # ticks 0-2 only
+    assert status.completed_cycles == 1
+
+
+async def test_risk_breach_halts_the_engine_and_cancels_orders():
+    risk = RiskMonitor(max_drawdown=D("0.0001"), daily_loss_limit=None)
+    engine, exchange, _ = make_engine(ScriptedFeed(["100", "90.5", "100", "100"]), risk=risk)
+    await engine.run()
+
+    status = engine.status()
+    assert status.state is EngineState.HALTED
+    assert "drawdown" in status.halt_reason
+    assert exchange.open_orders() == []
+    assert status.ticks_processed < 4
+
+
+async def test_a_failing_feed_cancels_orders_marks_failed_and_raises():
+    engine, exchange, _ = make_engine(
+        ScriptedFeed(["100", "99"], then_raise=ConnectionError("feed died"))
+    )
+
+    with pytest.raises(ConnectionError, match="feed died"):
+        await engine.run()
+
+    assert engine.status().state is EngineState.FAILED
+    assert exchange.open_orders() == []
+    assert any("feed died" in e for e in engine.status().events)
+
+
+async def test_stop_while_waiting_for_prices_shuts_down_cleanly():
+    waiting = asyncio.Event()
+    engine, exchange, _ = make_engine(ScriptedFeed(["100"], then_wait=waiting))
+    engine.start()
+    for _ in range(50):  # let it consume the first tick and block on the feed
+        await asyncio.sleep(0)
+        if engine.status().ticks_processed == 1:
+            break
+
+    await engine.stop()
+
+    assert engine.status().state is EngineState.STOPPED
+    assert exchange.open_orders() == []
+
+
+async def test_kill_from_outside_while_waiting_for_prices():
+    waiting = asyncio.Event()
+    engine, exchange, _ = make_engine(ScriptedFeed(["100"], then_wait=waiting))
+    task = engine.start()
+    for _ in range(50):
+        await asyncio.sleep(0)
+        if engine.status().ticks_processed == 1:
+            break
+
+    engine.kill("operator pressed the button")
+    await asyncio.wait_for(task, 1)  # returns normally: a kill is not a crash
+
+    assert engine.status().state is EngineState.HALTED
+    assert exchange.open_orders() == []
+
+
+async def test_orders_over_the_rate_limit_are_placed_as_time_passes():
+    holder = {}
+
+    def before_tick(i: int) -> None:
+        holder["clock"].advance(11)  # a minute of simulated time per tick would be plenty
+
+    engine, exchange, clock = make_engine(
+        ScriptedFeed(["100"] * 4, before_tick),
+        grid_count=31,
+        investment="310000",
+        cancel_on_shutdown=False,
+    )
+    holder["clock"] = clock
+    await engine.run()
+
+    assert len(exchange.open_orders()) == 30
+    assert engine.status().deferred_orders == 0
+    assert engine.status().rejected_orders == 0
+
+
+async def test_status_reports_the_live_picture():
+    engine, _, _ = make_engine(ScriptedFeed(["100", "97"]), cancel_on_shutdown=False)
+    await engine.run()
+    s = engine.status()
+    assert s.last_price == D("97")
+    assert s.equity is not None and s.initial_equity == D("2000000")
+    assert s.open_orders == 8 and s.fills == 1 and s.ticks_processed == 2
+    assert s.fees_paid > 0
+
+
+async def test_leaving_the_range_shows_up_in_events():
+    engine, _, _ = make_engine(ScriptedFeed(["100", "120"]), cancel_on_shutdown=False)
+    await engine.run()
+    assert any("left the grid range" in e for e in engine.status().events)
+
+
+async def test_a_run_is_recorded_in_the_repository():
+    repo = InMemoryRepository()
+    engine, _, _ = make_engine(
+        ScriptedFeed(["100"] + ["97", "100.5"] * 2), repository=repo, cancel_on_shutdown=False
+    )
+    await engine.run()
+
+    [run] = repo.list_runs()
+    assert run["status"] == "stopped" and run["stopped_at"] is not None
+    assert len(repo.get_fills(run["id"])) == 4
+    assert repo.get_events(run["id"])  # at least the start/stop events
+
+
+async def test_an_engine_cannot_be_run_twice():
+    engine, _, _ = make_engine(ScriptedFeed(["100"]))
+    await engine.run()
+    with pytest.raises(RuntimeError, match="already"):
+        await engine.run()
