@@ -1,5 +1,6 @@
 """API package."""
 
-from wallexbot.api.app import EngineManager, create_app
+from wallexbot.api.app import create_app
+from wallexbot.api.manager import InvalidRunState, RunManager, UnknownRun
 
-__all__ = ["create_app", "EngineManager"]
+__all__ = ["InvalidRunState", "RunManager", "UnknownRun", "create_app"]

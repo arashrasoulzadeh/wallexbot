@@ -17,12 +17,12 @@ from wallexbot.analytics.report import (
     render_markdown,
 )
 from wallexbot.config.schema import load_config
-from wallexbot.domain.market import Symbol
 from wallexbot.engine import BotEngine, EngineConfig
 from wallexbot.setup import GridSetup, find_market
 from wallexbot.storage.repository import SQLiteRepository
 from wallexbot.strategy.grid.parameters import GridMode
 from wallexbot.wallex.client import WallexRestClient
+from wallexbot.wallex.live_feed import make_price_feed
 from wallexbot.wallex.price_feed import PriceFeedReplay
 
 
@@ -269,15 +269,6 @@ def _parse_date(date_str: str) -> int:
 def make_rest_client() -> WallexRestClient:
     """Public Wallex client (a function so tests can swap in a fake)."""
     return WallexRestClient()
-
-
-def make_price_feed(kind: str, symbol: Symbol, client: WallexRestClient) -> Any:
-    """Live price feed for paper trading: public WebSocket trades ("ws") or REST polling ("poll")."""
-    from wallexbot.wallex.live_feed import RestPollingFeed, WebSocketTradeFeed
-
-    if kind == "poll":
-        return RestPollingFeed(symbol, client)
-    return WebSocketTradeFeed(symbol)
 
 
 def _load_grid_setup(config_file: str, client: WallexRestClient) -> GridSetup | None:

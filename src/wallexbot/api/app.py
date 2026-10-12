@@ -1,5 +1,6 @@
-"""FastAPI backend for web UI."""
+"""FastAPI backend for the web UI (paper trading and backtests only; no API keys)."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -9,66 +10,54 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
+from starlette.websockets import WebSocketDisconnect
 
-from wallexbot.config.schema import Config, validate_config
+from wallexbot.api.manager import InvalidRunState, RunManager, UnknownRun
+from wallexbot.config.defaults import default_config
+from wallexbot.config.schema import validate_config
 from wallexbot.storage.repository import InMemoryRepository, Repository
 from wallexbot.wallex.client import WallexRestClient
 
-
-class EngineManager:
-    """Manages bot engine instances."""
-
-    def __init__(self, repo: Repository) -> None:
-        self.repo = repo
-        self._running: dict[str, dict[str, Any]] = {}  # run_id -> {engine, config, task}
-
-    async def start_backtest(self, config: Config, from_ts: int, to_ts: int) -> str:
-        """Start a backtest."""
-        # Placeholder
-        return "backtest_123"
-
-    async def start_paper_run(self, config: Config) -> str:
-        """Start a paper run."""
-        # Placeholder
-        return "paper_123"
-
-    async def pause_run(self, run_id: str) -> None:
-        """Pause a run."""
-        pass
-
-    async def resume_run(self, run_id: str) -> None:
-        """Resume a run."""
-        pass
-
-    async def stop_run(self, run_id: str) -> None:
-        """Stop a run."""
-        pass
-
-    async def kill_run(self, run_id: str) -> None:
-        """Kill a run."""
-        pass
+FINAL_STATES = ("stopped", "halted", "failed")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> Any:
-    """Application lifespan."""
-    # Startup
-    yield
-    # Shutdown
+def _validation_errors(error: ValidationError) -> list[dict[str, Any]]:
+    """Pydantic errors without the exception objects in `ctx`, so they serialize to JSON."""
+    return [{"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]} for e in error.errors()]
+
+
+def _repo_summary(run: dict[str, Any]) -> dict[str, Any]:
+    """Uniform run summary from a stored run (in-memory and SQLite repositories differ)."""
+    config = run.get("config") or {}
+    market = run.get("market") or config.get("market")
+    if isinstance(market, dict):
+        market = market.get("symbol")
+    return {
+        "id": run["id"],
+        "status": run.get("status", "unknown"),
+        "market": market or "unknown",
+        "mode": run.get("mode") or config.get("mode") or "paper",
+        "started_at": run.get("started_at", 0),
+        "stopped_at": run.get("stopped_at") or 0,
+    }
 
 
 def create_app(
     repo: Repository | None = None,
-    engine_manager: EngineManager | None = None,
+    engine_manager: RunManager | None = None,
+    stream_interval: float = 1.0,
 ) -> FastAPI:
     """Create FastAPI application."""
 
     if repo is None:
         repo = InMemoryRepository()
+    manager = engine_manager if engine_manager is not None else RunManager(repo)
 
-    if engine_manager is None:
-        engine_manager = EngineManager(repo)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> Any:
+        yield
+        await manager.shutdown()  # stop running engines so no run outlives the server
 
     # Templates
     template_dir = Path(__file__).parent.parent / "ui" / "templates"
@@ -133,55 +122,88 @@ def create_app(
             for c in candles
         ]
 
-    # Runs
+    # Runs --------------------------------------------------------------------------
+
     @app.get("/api/runs")
     async def list_runs() -> Any:
-        runs = repo.list_runs()
-        return [
-            {
-                "id": r["id"],
-                "status": r.get("status", "unknown"),
-                "market": r.get("config", {}).get("market", {}).get("symbol", "unknown"),
-                "mode": r.get("config", {})
-                .get("strategy", {})
-                .get("grid", {})
-                .get("mode", "unknown"),
-                "started_at": r.get("created_at", 0),
-                "stopped_at": r.get("stopped_at", 0),
-            }
-            for r in runs
-        ]
+        rows = []
+        for run in repo.list_runs():
+            row = _repo_summary(run)
+            snap = manager.snapshot(row["id"])
+            if snap is not None:  # this process owns the run: show its live state
+                row["status"] = snap["status"]["state"]
+            rows.append(row)
+        return rows
 
-    @app.get("/api/runs/{run_id}")
-    async def get_run(run_id: str) -> Any:
+    def _live_or_none(run_id: str) -> dict[str, Any] | None:
+        snap = manager.snapshot(run_id)
+        return snap if isinstance(snap, dict) else None
+
+    def _stored_run(run_id: str) -> dict[str, Any]:
         run = repo.get_run(run_id)
         if not run:
             raise HTTPException(404, "Run not found")
         return run
 
+    @app.get("/api/runs/{run_id}")
+    async def get_run(run_id: str) -> Any:
+        snap = _live_or_none(run_id)
+        if snap is not None:
+            stored = repo.get_run(run_id)
+            summary = _repo_summary(stored) if stored else {"id": run_id}
+            return {**summary, **snap, "status": snap["status"]}
+        run = _stored_run(run_id)
+        return {**run, **_repo_summary(run), "status": {"state": run.get("status", "unknown")}}
+
     @app.get("/api/runs/{run_id}/orders")
     async def get_run_orders(run_id: str) -> Any:
-        orders = repo.get_open_orders(run_id)
-        return orders
+        snap = _live_or_none(run_id)
+        if snap is not None:
+            return snap["orders"]
+        _stored_run(run_id)
+        return repo.get_open_orders(run_id)
 
     @app.get("/api/runs/{run_id}/fills")
     async def get_run_fills(run_id: str) -> Any:
-        fills = repo.get_fills(run_id)
-        return fills
+        snap = _live_or_none(run_id)
+        if snap is not None:
+            return snap["fills"]
+        _stored_run(run_id)
+        return repo.get_fills(run_id)
 
     @app.get("/api/runs/{run_id}/pnl")
     async def get_run_pnl(run_id: str) -> Any:
-        # Placeholder - would compute from fills
-        return {"realized": "0", "unrealized": "0", "total": "0"}
+        snap = _live_or_none(run_id)
+        if snap is not None:
+            s = snap["status"]
+            return {
+                "realized": s["realized_pnl"],
+                "unrealized": s["unrealized_pnl"],
+                "total": s["total_pnl"],
+                "fees": s["fees_paid"],
+                "equity": s["equity"],
+            }
+        _stored_run(run_id)
+        return {
+            "realized": "0",
+            "unrealized": "0",
+            "total": "0",
+            "fees": "0",
+            "equity": None,
+            "note": "live figures exist only for runs of the current server process",
+        }
 
     @app.get("/api/runs/{run_id}/grid")
     async def get_run_grid(run_id: str) -> Any:
+        snap = _live_or_none(run_id)
+        if snap is not None:
+            return snap["grid"]
+        _stored_run(run_id)
         state = repo.get_grid_state(run_id)
-        if not state:
-            return {"levels": []}
-        return state
+        return state or {"levels": []}
 
-    # Config validation
+    # Config ------------------------------------------------------------------------
+
     class ConfigValidateRequest(BaseModel):
         exchange: dict[str, Any]
         market: dict[str, Any]
@@ -190,91 +212,113 @@ def create_app(
         simulation: dict[str, Any]
         logging: dict[str, Any]
 
+    @app.get("/api/config/default")
+    async def get_default_config() -> Any:
+        return default_config()
+
     @app.post("/api/config/validate")
     async def validate_config_endpoint(request: ConfigValidateRequest) -> Any:
         try:
             config = validate_config(request.model_dump())
-            return {
-                "valid": True,
-                "derived": {
-                    "spacing": str(config.strategy["grid"].spacing)
-                    if config.strategy["grid"].spacing
-                    else None,
-                    "levels_count": config.strategy["grid"].levels_count,
-                    "per_grid_investment": str(config.strategy["grid"].per_grid_investment)
-                    if config.strategy["grid"].per_grid_investment
-                    else None,
-                    "min_profit_per_cycle_after_fees": str(
-                        config.strategy["grid"].min_profit_per_cycle_after_fees
-                    )
-                    if config.strategy["grid"].min_profit_per_cycle_after_fees
-                    else None,
-                },
-            }
-        except Exception as e:
-            return {
-                "valid": False,
-                "errors": [str(e)],
-            }
+        except ValidationError as e:
+            return {"valid": False, "errors": [err["msg"] for err in _validation_errors(e)]}
+        except ValueError as e:
+            return {"valid": False, "errors": [str(e)]}
+        grid = config.strategy["grid"]
+        return {
+            "valid": True,
+            "derived": {
+                "spacing": str(grid.spacing) if grid.spacing else None,
+                "spacing_pct": str(grid.spacing_pct) if grid.spacing_pct else None,
+                "levels_count": grid.levels_count,
+                "per_grid_investment": str(grid.per_grid_investment)
+                if grid.per_grid_investment
+                else None,
+                "min_profit_per_cycle_after_fees": str(grid.min_profit_per_cycle_after_fees)
+                if grid.min_profit_per_cycle_after_fees
+                else None,
+                "round_trip_fee_rate": str(grid.round_trip_fee_rate)
+                if grid.round_trip_fee_rate
+                else None,
+            },
+        }
 
-    # Backtest
+    # Backtests ---------------------------------------------------------------------
+
     class BacktestRequest(BaseModel):
         config: dict[str, Any]
         from_ts: int
         to_ts: int
+        resolution: str = "60"
 
     @app.post("/api/backtests")
     async def start_backtest(request: BacktestRequest) -> Any:
         try:
             config = validate_config(request.config)
         except ValidationError as e:
-            raise HTTPException(422, detail=e.errors()) from e
-        run_id = await engine_manager.start_backtest(
-            config,
-            request.from_ts,
-            request.to_ts,
+            raise HTTPException(422, detail=_validation_errors(e)) from e
+        if request.from_ts >= request.to_ts:
+            raise HTTPException(422, detail="from_ts must be before to_ts")
+        bt_id = await manager.start_backtest(
+            config, request.from_ts, request.to_ts, request.resolution
         )
-        return {"id": run_id}
+        return {"id": bt_id}
 
-    # Paper runs
+    @app.get("/api/backtests/{bt_id}")
+    async def get_backtest(bt_id: str) -> Any:
+        result = manager.backtest(bt_id)
+        if not isinstance(result, dict):
+            raise HTTPException(404, "Backtest not found")
+        return result
+
+    # Paper runs --------------------------------------------------------------------
+
     class PaperRunRequest(BaseModel):
         config: dict[str, Any]
+        feed: str = Field(default="ws", pattern="^(ws|poll)$")
 
     @app.post("/api/paper-runs")
     async def start_paper_run(request: PaperRunRequest) -> Any:
         try:
             config = validate_config(request.config)
         except ValidationError as e:
-            raise HTTPException(422, detail=e.errors()) from e
-        run_id = await engine_manager.start_paper_run(config)
+            raise HTTPException(422, detail=_validation_errors(e)) from e
+        try:
+            run_id = await manager.start_paper_run(config, request.feed)
+        except ValueError as e:
+            raise HTTPException(422, detail=str(e)) from e
         return {"id": run_id}
+
+    async def _control(action: str, run_id: str, result: str) -> dict[str, str]:
+        try:
+            await getattr(manager, action)(run_id)
+        except UnknownRun as e:
+            raise HTTPException(404, "Run not found") from e
+        except InvalidRunState as e:
+            raise HTTPException(409, str(e)) from e
+        return {"status": result}
 
     @app.post("/api/runs/{run_id}/pause")
     async def pause_run(run_id: str) -> Any:
-        await engine_manager.pause_run(run_id)
-        return {"status": "paused"}
+        return await _control("pause_run", run_id, "paused")
 
     @app.post("/api/runs/{run_id}/resume")
     async def resume_run(run_id: str) -> Any:
-        await engine_manager.resume_run(run_id)
-        return {"status": "running"}
+        return await _control("resume_run", run_id, "running")
 
     @app.post("/api/runs/{run_id}/stop")
     async def stop_run(run_id: str) -> Any:
-        await engine_manager.stop_run(run_id)
-        return {"status": "stopped"}
+        return await _control("stop_run", run_id, "stopped")
 
     @app.post("/api/runs/{run_id}/kill")
     async def kill_run(run_id: str) -> Any:
-        await engine_manager.kill_run(run_id)
-        return {"status": "killed"}
+        return await _control("kill_run", run_id, "killed")
 
-    # Notification test endpoint
+    # Notifications -----------------------------------------------------------------
+
     @app.post("/api/notify/test")
     async def test_notification(request: Request) -> Any:
-        data = await request.json()
-        # In real implementation, would send via Telegram
-        return {"message": f"Test notification sent: {data.get('message', 'test')}"}
+        return {"message": "Telegram is not configured: no notification was sent"}
 
     # Admin endpoints
     @app.post("/api/admin/backup")
@@ -315,65 +359,46 @@ def create_app(
         except Exception as e:
             return {"message": f"Backup failed: {e}"}
 
-    # WebSocket for live updates
+    # Live updates ------------------------------------------------------------------
+
     @app.websocket("/api/stream")
-    async def websocket_stream(websocket: WebSocket) -> None:
+    async def websocket_stream(websocket: WebSocket, run_id: str = "") -> None:
+        """Push a snapshot of one run every `stream_interval` seconds until it finishes."""
         await websocket.accept()
         try:
             while True:
-                data = await websocket.receive_text()
-                # Echo for now
-                await websocket.send_text(data)
-        except Exception:
-            await websocket.close()
+                snap = _live_or_none(run_id)
+                if snap is None:
+                    await websocket.close(code=4404)
+                    return
+                final = snap["status"]["state"] in FINAL_STATES
+                await websocket.send_json({"type": "snapshot", "final": final, "run": snap})
+                if final:
+                    await websocket.close()
+                    return
+                await asyncio.sleep(stream_interval)
+        except (WebSocketDisconnect, RuntimeError):
+            return  # the browser went away
 
-    # UI Routes - serve templates
-    @app.get("/dashboard")
-    async def dashboard(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "base.html")
+    # Static files and pages --------------------------------------------------------
+    static_dir = Path(__file__).parent.parent / "ui" / "static"
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-    @app.get("/configure")
-    async def configure_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "configure.html")
+    def page(path: str, template: str, key: str) -> None:
+        async def render(request: Request) -> HTMLResponse:
+            return templates.TemplateResponse(request, template, {"page": key})
 
-    @app.get("/backtest")
-    async def backtest_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "backtest.html")
+        app.add_api_route(
+            path, render, methods=["GET"], response_class=HTMLResponse, include_in_schema=False
+        )
 
-    @app.get("/paper")
-    async def paper_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "paper.html")
-
-    @app.get("/runs")
-    async def runs_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "runs.html")
-
-    @app.get("/history")
-    async def history_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "history.html")
-
-    @app.get("/settings")
-    async def settings_page(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "settings.html")
-
-    # Serve static files (UI)
-    try:
-        static_dir = Path(__file__).parent.parent / "ui" / "static"
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-    except RuntimeError:
-        pass
-
-    @app.get("/")
-    async def root() -> Any:
-        return HTMLResponse("""
-        <html>
-            <head><title>Wallex Grid Bot</title></head>
-            <body>
-                <h1>Wallex Grid Bot Dashboard</h1>
-                <p><a href="/docs">API Documentation</a></p>
-                <p><a href="/dashboard">Dashboard</a></p>
-            </body>
-        </html>
-        """)
+    page("/", "dashboard.html", "dashboard")
+    page("/dashboard", "dashboard.html", "dashboard")
+    page("/configure", "configure.html", "configure")
+    page("/backtest", "backtest.html", "backtest")
+    page("/paper", "paper.html", "paper")
+    page("/runs", "runs.html", "runs")
+    page("/history", "unavailable.html", "history")
+    page("/settings", "unavailable.html", "settings")
 
     return app

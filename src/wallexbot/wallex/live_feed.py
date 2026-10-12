@@ -129,3 +129,12 @@ class RestPollingFeed:
 
     async def close(self) -> None:
         self._closed = True
+
+
+def make_price_feed(
+    kind: str, symbol: Symbol, client: _TradeSource
+) -> WebSocketTradeFeed | RestPollingFeed:
+    """Live price feed for paper trading: public WebSocket trades ("ws") or REST polling ("poll")."""
+    if kind == "poll":
+        return RestPollingFeed(symbol, client)
+    return WebSocketTradeFeed(symbol)

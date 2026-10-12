@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from wallexbot.api.app import create_app
+from wallexbot.api.manager import RunManager
 from wallexbot.domain.market import Symbol
 from wallexbot.storage.repository import InMemoryRepository
 
@@ -18,7 +19,9 @@ def repo():
 
 @pytest.fixture
 def engine_manager():
-    manager = AsyncMock()
+    manager = Mock(spec=RunManager)  # async methods become AsyncMock, sync ones stay sync
+    manager.snapshot.return_value = None
+    manager.live_runs.return_value = []
     manager.start_backtest = AsyncMock(return_value="backtest_123")
     manager.start_paper_run = AsyncMock(return_value="paper_123")
     manager.pause_run = AsyncMock()
