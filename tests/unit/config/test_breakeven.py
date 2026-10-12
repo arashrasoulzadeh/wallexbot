@@ -11,7 +11,11 @@ from wallexbot.config.schema import load_config, validate_config
 EXAMPLE = Path(__file__).resolve().parents[3] / "config" / "grid.example.yaml"
 
 BASE = {
-    "exchange": {"name": "wallex", "base_url": "https://api.wallex.ir", "ws_url": "wss://api.wallex.ir/ws"},
+    "exchange": {
+        "name": "wallex",
+        "base_url": "https://api.wallex.ir",
+        "ws_url": "wss://api.wallex.ir/ws",
+    },
     "market": {"symbol": "USDTTMN"},
     "strategy": {
         "grid": {
@@ -61,7 +65,9 @@ def test_higher_fees_make_a_previously_valid_grid_invalid():
 def test_per_level_investment_below_min_notional_is_rejected():
     # 2,000,000 / 30 levels = 66,666 TMN per level < 90,000 minimum
     with pytest.raises(ValueError, match="min_notional"):
-        validate_config(cfg(grid={"grid_count": 30, "lower_price": "250000", "upper_price": "280000"}))
+        validate_config(
+            cfg(grid={"grid_count": 30, "lower_price": "250000", "upper_price": "280000"})
+        )
 
 
 def test_min_profit_per_cycle_is_spacing_minus_round_trip_fee_on_price():

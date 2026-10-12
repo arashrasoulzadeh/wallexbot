@@ -29,19 +29,19 @@ class GridParameters:
 
     def __post_init__(self) -> None:
         # Convert string inputs to Decimal
-        object.__setattr__(self, 'lower_price', Decimal(str(self.lower_price)))
-        object.__setattr__(self, 'upper_price', Decimal(str(self.upper_price)))
-        object.__setattr__(self, 'total_investment', Decimal(str(self.total_investment)))
+        object.__setattr__(self, "lower_price", Decimal(str(self.lower_price)))
+        object.__setattr__(self, "upper_price", Decimal(str(self.upper_price)))
+        object.__setattr__(self, "total_investment", Decimal(str(self.total_investment)))
         if self.per_grid_qty is not None:
-            object.__setattr__(self, 'per_grid_qty', Decimal(str(self.per_grid_qty)))
+            object.__setattr__(self, "per_grid_qty", Decimal(str(self.per_grid_qty)))
         if self.stop_loss_price is not None:
-            object.__setattr__(self, 'stop_loss_price', Decimal(str(self.stop_loss_price)))
+            object.__setattr__(self, "stop_loss_price", Decimal(str(self.stop_loss_price)))
         if self.take_profit_price is not None:
-            object.__setattr__(self, 'take_profit_price', Decimal(str(self.take_profit_price)))
+            object.__setattr__(self, "take_profit_price", Decimal(str(self.take_profit_price)))
 
         # Convert mode string to GridMode enum
         if isinstance(self.mode, str):
-            object.__setattr__(self, 'mode', GridMode(self.mode))
+            object.__setattr__(self, "mode", GridMode(self.mode))
 
         if self.lower_price >= self.upper_price:
             raise ValueError("lower_price must be less than upper_price")
@@ -114,7 +114,7 @@ def generate_levels(
             raise ValueError("lower must be positive for geometric mode")
         ratio = (upper / lower) ** (Decimal("1") / (count - 1))
         for i in range(count):
-            raw_price = lower * (ratio ** i)
+            raw_price = lower * (ratio**i)
             price = quantize_down(raw_price, Decimal("1") / step_factor)
             prices.append(price)
 

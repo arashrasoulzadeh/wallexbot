@@ -48,7 +48,9 @@ class ActionExecutor:
     def execute_place(self, action: PlaceAction) -> object:
         """Execute place order action."""
         # Generate client_id if not provided
-        client_id = action.client_id or self._generate_client_id(action.level_index, self._client_id_counter)
+        client_id = action.client_id or self._generate_client_id(
+            action.level_index, self._client_id_counter
+        )
 
         request = OrderRequest(
             client_id=client_id,

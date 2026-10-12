@@ -41,6 +41,7 @@ class WallexWebSocketClient:
             self._connection = await self.connection_factory()
         else:
             import websockets
+
             self._connection = await websockets.connect(self.url)
 
     async def disconnect(self) -> None:

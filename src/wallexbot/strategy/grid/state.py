@@ -8,6 +8,7 @@ from wallexbot.strategy.grid.parameters import Level
 
 class GridStateError(Exception):
     """Grid state invariant violation."""
+
     pass
 
 
@@ -34,7 +35,9 @@ class GridState:
         `quantity` is the ordered amount; it lets the strategy tell partial fills from full ones.
         """
         if level_index in self.active_orders:
-            raise GridStateError(f"Level {level_index} already has active order {self.active_orders[level_index]}")
+            raise GridStateError(
+                f"Level {level_index} already has active order {self.active_orders[level_index]}"
+            )
         if level_index < 0 or level_index >= len(self.levels):
             raise GridStateError(f"Invalid level index: {level_index}")
         order_side = side or self.levels[level_index].side
@@ -55,7 +58,9 @@ class GridState:
         self.filled_fee.pop(level_index, None)
         return self.active_orders.pop(level_index, None)
 
-    def record_partial_fill(self, level_index: int, qty: Decimal, fee: Decimal) -> tuple[Decimal, Decimal]:
+    def record_partial_fill(
+        self, level_index: int, qty: Decimal, fee: Decimal
+    ) -> tuple[Decimal, Decimal]:
         """Add a fill to the running totals for a level; returns (total_qty, total_fee)."""
         total_qty = self.filled_qty.get(level_index, Decimal("0")) + qty
         total_fee = self.filled_fee.get(level_index, Decimal("0")) + fee

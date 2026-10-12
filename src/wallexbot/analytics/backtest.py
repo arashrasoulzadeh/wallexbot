@@ -100,7 +100,7 @@ class Backtester:
 
             # Update time tracking
             if i > 0:
-                time_diff = tick.timestamp - ticks[i-1].timestamp
+                time_diff = tick.timestamp - ticks[i - 1].timestamp
                 self._total_time += time_diff
                 # Check if in range
                 params = self.strategy.params
@@ -220,7 +220,9 @@ class Backtester:
     def _calculate_metrics(self, final_equity: Decimal) -> BacktestMetrics:
         """Calculate final metrics."""
         realized = final_equity - self._initial_equity
-        total_return = (realized / self._initial_equity * 100) if self._initial_equity > 0 else Decimal("0")
+        total_return = (
+            (realized / self._initial_equity * 100) if self._initial_equity > 0 else Decimal("0")
+        )
 
         # Max drawdown
         if self._peak_equity > 0:
@@ -229,7 +231,9 @@ class Backtester:
             max_dd = Decimal("0")
 
         # Time in range
-        time_in_range = (self._in_range_time / self._total_time * 100) if self._total_time > 0 else Decimal("0")
+        time_in_range = (
+            (self._in_range_time / self._total_time * 100) if self._total_time > 0 else Decimal("0")
+        )
 
         # Buy and hold
         buy_hold = Decimal("0")

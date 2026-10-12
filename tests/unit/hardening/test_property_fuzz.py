@@ -98,7 +98,10 @@ class TestStrategyPropertyTests:
 
         from wallexbot.strategy.grid.parameters import Level
 
-        level_objs = [Level(index=level["index"], price=level["price"], side=level["side"]) for level in levels]
+        level_objs = [
+            Level(index=level["index"], price=level["price"], side=level["side"])
+            for level in levels
+        ]
         current_price = Decimal(str(90 + current_price_idx * 2))
 
         assigned = assign_sides(level_objs, current_price)

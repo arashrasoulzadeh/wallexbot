@@ -88,6 +88,7 @@ class TelegramNotifier:
         """Send message via Telegram Bot API."""
         if self.transport is None:
             import httpx
+
             async with httpx.AsyncClient() as client:
                 await self._do_send(client, message)
         else:

@@ -38,6 +38,7 @@ def grid_search_optimizer(
 
     # Generate all combinations
     import itertools
+
     keys = list(param_grid.keys())
     values = list(param_grid.values())
     combinations = list(itertools.product(*values))
@@ -59,11 +60,13 @@ def grid_search_optimizer(
 
         if result:
             score = _calculate_score(result, objective)
-            results.append(OptimizationResult(
-                params=grid_params,
-                metrics=result.metrics,
-                score=score,
-            ))
+            results.append(
+                OptimizationResult(
+                    params=grid_params,
+                    metrics=result.metrics,
+                    score=score,
+                )
+            )
 
     # Sort by score descending
     results.sort(key=lambda r: r.score, reverse=True)
@@ -97,7 +100,9 @@ def random_search_optimizer(
                     # Log-uniform sampling
                     log_min = float(min_val.ln())
                     log_max = float(max_val.ln())
-                    params_dict[key] = Decimal(str(random.expovariate(random.uniform(log_min, log_max))))
+                    params_dict[key] = Decimal(
+                        str(random.expovariate(random.uniform(log_min, log_max)))
+                    )
                 else:
                     params_dict[key] = min_val + (max_val - min_val) * Decimal(str(random.random()))
             else:
@@ -117,11 +122,13 @@ def random_search_optimizer(
 
         if result:
             score = _calculate_score(result, objective)
-            results.append(OptimizationResult(
-                params=grid_params,
-                metrics=result.metrics,
-                score=score,
-            ))
+            results.append(
+                OptimizationResult(
+                    params=grid_params,
+                    metrics=result.metrics,
+                    score=score,
+                )
+            )
 
     results.sort(key=lambda r: r.score, reverse=True)
     return results
@@ -146,8 +153,8 @@ def walk_forward_validation(
     n = len(candles)
 
     for start in range(0, n - train_window - test_window, step):
-        train_candles = candles[start:start + train_window]
-        test_candles = candles[start + train_window:start + train_window + test_window]
+        train_candles = candles[start : start + train_window]
+        test_candles = candles[start + train_window : start + train_window + test_window]
 
         # Optimize on training window
         opt_results = random_search_optimizer(
@@ -170,16 +177,20 @@ def walk_forward_validation(
             # Also get in-sample performance
             train_result = _run_single_backtest(best_params, train_candles, base_config)
 
-            results.append({
-                "window_start": start,
-                "train_window": train_candles,
-                "test_window": test_candles,
-                "best_params": best_params,
-                "in_sample_score": opt_results[0].score if opt_results else None,
-                "out_of_sample_score": _calculate_score(test_result, objective) if test_result else None,
-                "in_sample_metrics": train_result.metrics if train_result else None,
-                "out_of_sample_metrics": test_result.metrics if test_result else None,
-            })
+            results.append(
+                {
+                    "window_start": start,
+                    "train_window": train_candles,
+                    "test_window": test_candles,
+                    "best_params": best_params,
+                    "in_sample_score": opt_results[0].score if opt_results else None,
+                    "out_of_sample_score": _calculate_score(test_result, objective)
+                    if test_result
+                    else None,
+                    "in_sample_metrics": train_result.metrics if train_result else None,
+                    "out_of_sample_metrics": test_result.metrics if test_result else None,
+                }
+            )
 
     return results
 
@@ -218,24 +229,29 @@ def monte_carlo_simulation(
             price = price * (1 + r)
             # Create mock candle
             from wallexbot.wallex.models import Candle
-            sim_candles.append(Candle(
-                symbol=Symbol("USDTTMN"),
-                resolution="60",
-                open_time=0,
-                open=Decimal(str(price)),
-                high=Decimal(str(price * 1.001)),
-                low=Decimal(str(price * 0.999)),
-                close=Decimal(str(price)),
-                volume=Decimal("1000"),
-            ))
+
+            sim_candles.append(
+                Candle(
+                    symbol=Symbol("USDTTMN"),
+                    resolution="60",
+                    open_time=0,
+                    open=Decimal(str(price)),
+                    high=Decimal(str(price * 1.001)),
+                    low=Decimal(str(price * 0.999)),
+                    close=Decimal(str(price)),
+                    volume=Decimal("1000"),
+                )
+            )
 
         result = _run_single_backtest(params, sim_candles, base_config)
         if result:
-            results.append({
-                "realized_pnl": float(result.metrics.realized_pnl),
-                "max_drawdown": float(result.metrics.max_drawdown),
-                "total_return": float(result.metrics.total_return_pct),
-            })
+            results.append(
+                {
+                    "realized_pnl": float(result.metrics.realized_pnl),
+                    "max_drawdown": float(result.metrics.max_drawdown),
+                    "total_return": float(result.metrics.total_return_pct),
+                }
+            )
 
     if not results:
         return {}
@@ -283,7 +299,9 @@ def _run_single_backtest(
         exchange = SimulatedExchange(
             market=market,
             fee_schedule=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")),
-            min_notional_rule=MinNotionalRule(min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")),
+            min_notional_rule=MinNotionalRule(
+                min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
+            ),
             initial_balances={
                 "TMN": base_config.get("initial_balance_quote", Decimal("2000000.00")),
                 "USDT": base_config.get("initial_balance_base", Decimal("0")),
@@ -293,12 +311,14 @@ def _run_single_backtest(
         # Create price ticks from candles
         ticks = []
         for c in candles:
-            ticks.append(PriceTick(
-                symbol=Symbol("USDTTMN"),
-                price=c.close,
-                timestamp=c.open_time * 1000,
-                source="replay",
-            ))
+            ticks.append(
+                PriceTick(
+                    symbol=Symbol("USDTTMN"),
+                    price=c.close,
+                    timestamp=c.open_time * 1000,
+                    source="replay",
+                )
+            )
 
         price_feed = PriceFeedReplay(ticks)
 

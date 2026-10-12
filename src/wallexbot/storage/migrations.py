@@ -109,7 +109,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             cursor.executescript(migration)
             cursor.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-                (i, int(__import__('time').time() * 1000))
+                (i, int(__import__("time").time() * 1000)),
             )
 
     conn.commit()

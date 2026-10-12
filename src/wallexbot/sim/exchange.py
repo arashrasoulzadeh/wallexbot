@@ -30,8 +30,12 @@ class SimulatedExchange:
 
     market: Market
     initial_balances: dict[str, Balance]
-    fee_schedule_config: FeeSchedule = field(default=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.001")))
-    min_notional_rule: MinNotionalRule = field(default=MinNotionalRule(min_notional=Decimal("10"), min_quantity=Decimal("0.0001")))
+    fee_schedule_config: FeeSchedule = field(
+        default=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.001"))
+    )
+    min_notional_rule: MinNotionalRule = field(
+        default=MinNotionalRule(min_notional=Decimal("10"), min_quantity=Decimal("0.0001"))
+    )
     fill_model: FillModel = FillModel.CONSERVATIVE
     clock: Clock = field(default_factory=_RealClock)
 
@@ -95,22 +99,30 @@ class SimulatedExchange:
         if request.price is not None:
             price_step = self.market.price_step
             if request.price != quantize_down(request.price, price_step):
-                raise ValueError(f"Price precision exceeds market limit: {self.market.price_precision} decimals")
+                raise ValueError(
+                    f"Price precision exceeds market limit: {self.market.price_precision} decimals"
+                )
 
         # Check quantity precision
         qty_step = self.market.amount_step
         if request.quantity != quantize_down(request.quantity, qty_step):
-            raise ValueError(f"Quantity precision exceeds market limit: {self.market.amount_precision} decimals")
+            raise ValueError(
+                f"Quantity precision exceeds market limit: {self.market.amount_precision} decimals"
+            )
 
         # Check min notional
         if request.price is not None:
             notional = request.price * request.quantity
             if notional < self.min_notional_rule.min_notional:
-                raise ValueError(f"Order notional {notional} below minimum {self.min_notional_rule.min_notional}")
+                raise ValueError(
+                    f"Order notional {notional} below minimum {self.min_notional_rule.min_notional}"
+                )
 
         # Check min quantity
         if request.quantity < self.min_notional_rule.min_quantity:
-            raise ValueError(f"Order quantity {request.quantity} below minimum {self.min_notional_rule.min_quantity}")
+            raise ValueError(
+                f"Order quantity {request.quantity} below minimum {self.min_notional_rule.min_quantity}"
+            )
 
         # Check stop price for STOP_* orders
         if request.type in (OrderType.STOP_LIMIT, OrderType.STOP_MARKET):
@@ -219,8 +231,8 @@ class SimulatedExchange:
 
         # Update order status
         now = int(self.clock.now() * 1000)
-        object.__setattr__(order, 'status', OrderStatus.CANCELED)
-        object.__setattr__(order, 'updated_at', now)
+        object.__setattr__(order, "status", OrderStatus.CANCELED)
+        object.__setattr__(order, "updated_at", now)
 
     def get_order(self, order_id: str) -> Order:
         """Get order by ID."""
@@ -271,7 +283,9 @@ class SimulatedExchange:
             remaining_quote = order.price * order.remaining_quantity
             fee = self._fee_schedule.calculate_fee_quote(remaining_quote, is_maker=True)
             total_locked = remaining_quote + fee
-            self._balances[self.market.quote] = self._balances[self.market.quote].unlock(total_locked)
+            self._balances[self.market.quote] = self._balances[self.market.quote].unlock(
+                total_locked
+            )
 
             # Add base to free
             base_asset = self.market.base

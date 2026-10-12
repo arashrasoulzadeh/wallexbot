@@ -38,10 +38,12 @@ class StrategyRegistry:
 
     def register(self, name: str):
         """Decorator to register a strategy."""
+
         def decorator(cls):
             plugin = cls()
             self._strategies[name] = plugin
             return cls
+
         return decorator
 
     def get(self, name: str) -> StrategyPlugin | None:
@@ -59,7 +61,9 @@ class StrategyRegistry:
         """List registered strategy names."""
         return list(self._strategies.keys())
 
-    def create_strategy(self, name: str, market: Market, params: GridParameters) -> GridStrategy | None:
+    def create_strategy(
+        self, name: str, market: Market, params: GridParameters
+    ) -> GridStrategy | None:
         """Create strategy instance."""
         plugin = self._strategies.get(name)
         if plugin:
@@ -99,6 +103,7 @@ class StrategyRegistry:
                     errors.append(f"Missing required method: {method}")
 
             from decimal import Decimal
+
             # Test method signatures
             actions = strategy.on_start(current_price=Decimal("100"), timestamp=0)
             assert isinstance(actions, list)
@@ -106,7 +111,13 @@ class StrategyRegistry:
             actions = strategy.on_price(current_price=Decimal("100"), timestamp=0)
             assert isinstance(actions, list)
 
-            actions = strategy.on_fill(level_index=0, fill_qty=Decimal("1"), fill_fee=Decimal("0.01"), fill_fee_asset="TMN", timestamp=0)
+            actions = strategy.on_fill(
+                level_index=0,
+                fill_qty=Decimal("1"),
+                fill_fee=Decimal("0.01"),
+                fill_fee_asset="TMN",
+                timestamp=0,
+            )
             assert isinstance(actions, list)
 
             actions = strategy.on_stop(timestamp=0)
@@ -132,6 +143,7 @@ class GridStrategyPlugin(StrategyPlugin):
     @property
     def params_model(self) -> type[BaseModel]:
         from wallexbot.config.schema import GridStrategyConfig
+
         return GridStrategyConfig
 
     def create_strategy(self, market: Market, params: GridParameters) -> GridStrategy:

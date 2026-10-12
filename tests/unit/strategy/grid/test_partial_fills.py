@@ -7,15 +7,22 @@ from wallexbot.strategy.grid.interface import AlertAction, GridStrategy, PlaceAc
 from wallexbot.strategy.grid.parameters import GridMode, GridParameters
 
 MARKET = Market(
-    symbol=Symbol("USDTTMN"), base="USDT", quote="TMN",
-    price_precision=2, amount_precision=4, is_spot=True,
+    symbol=Symbol("USDTTMN"),
+    base="USDT",
+    quote="TMN",
+    price_precision=2,
+    amount_precision=4,
+    is_spot=True,
 )
 
 
 def started():
     params = GridParameters(
-        lower_price=D("90"), upper_price=D("110"), grid_count=9,
-        mode=GridMode.ARITHMETIC, total_investment=D("90000"),
+        lower_price=D("90"),
+        upper_price=D("110"),
+        grid_count=9,
+        mode=GridMode.ARITHMETIC,
+        total_investment=D("90000"),
     )
     s = GridStrategy(MARKET, params)
     s.on_start(D("100"))

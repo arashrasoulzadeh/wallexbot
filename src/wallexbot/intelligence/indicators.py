@@ -121,10 +121,14 @@ def calculate_adx(candles: list[Candle], period: int = 14) -> Decimal:
         return Decimal("0")
 
     # Calculate DI+ and DI-
-    di_plus = [(plus_dm_smooth[i] / tr_smooth[i] * 100) if tr_smooth[i] > 0 else Decimal("0")
-               for i in range(len(tr_smooth))]
-    di_minus = [(minus_dm_smooth[i] / tr_smooth[i] * 100) if tr_smooth[i] > 0 else Decimal("0")
-                for i in range(len(tr_smooth))]
+    di_plus = [
+        (plus_dm_smooth[i] / tr_smooth[i] * 100) if tr_smooth[i] > 0 else Decimal("0")
+        for i in range(len(tr_smooth))
+    ]
+    di_minus = [
+        (minus_dm_smooth[i] / tr_smooth[i] * 100) if tr_smooth[i] > 0 else Decimal("0")
+        for i in range(len(tr_smooth))
+    ]
 
     # Calculate DX
     dx_values = []
@@ -164,7 +168,11 @@ def detect_regime(candles: list[Candle], period: int = 20) -> str:
     x2_sum = sum(Decimal(str(i)) ** 2 for i in range(len(recent_returns)))
     n = Decimal(str(len(recent_returns)))
 
-    slope = (n * xy_sum - x_sum * y_sum) / (n * x2_sum - x_sum * x_sum) if (n * x2_sum - x_sum * x_sum) != 0 else Decimal("0")
+    slope = (
+        (n * xy_sum - x_sum * y_sum) / (n * x2_sum - x_sum * x_sum)
+        if (n * x2_sum - x_sum * x_sum) != 0
+        else Decimal("0")
+    )
 
     # Classify regime
     if adx > 25:

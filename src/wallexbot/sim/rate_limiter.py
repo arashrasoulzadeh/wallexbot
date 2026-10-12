@@ -1,6 +1,5 @@
 """Rate limiter for simulating exchange API limits."""
 
-
 from wallexbot.domain import Clock
 
 

@@ -53,8 +53,7 @@ def recenter_grid(
     # Check if price has been out of range
     # (In practice, would track this in run state)
     price_out_of_range = (
-        current_price > current_params.upper_price or
-        current_price < current_params.lower_price
+        current_price > current_params.upper_price or current_price < current_params.lower_price
     )
 
     if not price_out_of_range:
@@ -111,9 +110,13 @@ def dynamic_spacing(
 
     # Current spacing
     if current_params.grid_count > 1:
-        current_spacing = (current_params.upper_price - current_params.lower_price) / (current_params.grid_count - 1)
+        current_spacing = (current_params.upper_price - current_params.lower_price) / (
+            current_params.grid_count - 1
+        )
     else:
-        return AdaptiveDecision(action=AdaptiveAction.NONE, reason="Invalid grid", confidence=Decimal("0"))
+        return AdaptiveDecision(
+            action=AdaptiveAction.NONE, reason="Invalid grid", confidence=Decimal("0")
+        )
 
     # Minimum profitable spacing
     round_trip_fee = fee_rate * 2
@@ -138,7 +141,11 @@ def dynamic_spacing(
             confidence=Decimal("0.9"),
         )
 
-    action = AdaptiveAction.WIDEN_SPACING if target_spacing > current_spacing else AdaptiveAction.NARROW_SPACING
+    action = (
+        AdaptiveAction.WIDEN_SPACING
+        if target_spacing > current_spacing
+        else AdaptiveAction.NARROW_SPACING
+    )
 
     return AdaptiveDecision(
         action=action,

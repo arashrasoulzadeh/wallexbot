@@ -135,7 +135,9 @@ class BotEngine:
         # For now, cancel all
         self.kill()
 
-    def handle_fill(self, level_index: int, fill_qty: Decimal, fill_fee: Decimal, fill_fee_asset: str) -> None:
+    def handle_fill(
+        self, level_index: int, fill_qty: Decimal, fill_fee: Decimal, fill_fee_asset: str
+    ) -> None:
         """Handle fill event from exchange."""
         actions = self.config.strategy.on_fill(
             level_index=level_index,

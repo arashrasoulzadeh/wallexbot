@@ -24,7 +24,9 @@ class MatchingEngine:
     fee_schedule: FeeSchedule
     fill_model: FillModel = FillModel.CONSERVATIVE
     _orders: dict[str, Order] = field(default_factory=dict)
-    _stop_orders: dict[str, tuple[Order, Decimal]] = field(default_factory=dict)  # order_id -> (order, stop_price)
+    _stop_orders: dict[str, tuple[Order, Decimal]] = field(
+        default_factory=dict
+    )  # order_id -> (order, stop_price)
     _order_sequence: int = 0
 
     def add_order(self, order: Order) -> None:
@@ -47,9 +49,7 @@ class MatchingEngine:
         """Get all open orders."""
         return [o for o in self._orders.values() if o.is_active]
 
-    def process_trade(
-        self, price: Decimal, quantity: Decimal, timestamp: int
-    ) -> list[Fill]:
+    def process_trade(self, price: Decimal, quantity: Decimal, timestamp: int) -> list[Fill]:
         """
         Process a trade against open orders.
 
@@ -253,13 +253,13 @@ class MatchingEngine:
 
         # Update order (would need mutable order or return new order)
         # For now, we'll mutate - in production use immutable updates
-        object.__setattr__(order, 'filled_quantity', order.filled_quantity + fill_qty)
-        object.__setattr__(order, 'fee', order.fee + fee)
-        object.__setattr__(order, 'updated_at', timestamp)
+        object.__setattr__(order, "filled_quantity", order.filled_quantity + fill_qty)
+        object.__setattr__(order, "fee", order.fee + fee)
+        object.__setattr__(order, "updated_at", timestamp)
 
         if order.filled_quantity >= order.quantity:
-            object.__setattr__(order, 'status', OrderStatus.FILLED)
+            object.__setattr__(order, "status", OrderStatus.FILLED)
         else:
-            object.__setattr__(order, 'status', OrderStatus.PARTIALLY_FILLED)
+            object.__setattr__(order, "status", OrderStatus.PARTIALLY_FILLED)
 
         return fills

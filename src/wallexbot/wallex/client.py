@@ -66,20 +66,24 @@ class WallexRestClient:
         markets = []
         for item in result:
             if item.get("isSpot", False):
-                markets.append(Market(
-                    symbol=Symbol(item["symbol"]),
-                    base_asset=item["baseAsset"],
-                    quote_asset=item["quoteAsset"],
-                    price_precision=item["pricePrecision"],
-                    amount_precision=item["amountPrecision"],
-                    is_spot=item["isSpot"],
-                ))
+                markets.append(
+                    Market(
+                        symbol=Symbol(item["symbol"]),
+                        base_asset=item["baseAsset"],
+                        quote_asset=item["quoteAsset"],
+                        price_precision=item["pricePrecision"],
+                        amount_precision=item["amountPrecision"],
+                        is_spot=item["isSpot"],
+                    )
+                )
         return markets
 
     def get_depth(self, symbol: str) -> Depth:
         """Get order book depth for a symbol."""
         client = self._get_client()
-        response = client.request("GET", f"{self.base_url}/hector/web/v1/depth", params={"symbol": symbol})
+        response = client.request(
+            "GET", f"{self.base_url}/hector/web/v1/depth", params={"symbol": symbol}
+        )
         result = self._handle_response(response)
 
         bids = [
@@ -110,13 +114,15 @@ class WallexRestClient:
 
         trades = []
         for item in result:
-            trades.append(Trade(
-                symbol=Symbol(symbol),
-                price=parse_wire_string(item["price"]),
-                quantity=parse_wire_string(item["quantity"]),
-                side=item["side"].upper(),
-                timestamp=item["timestamp"],
-            ))
+            trades.append(
+                Trade(
+                    symbol=Symbol(symbol),
+                    price=parse_wire_string(item["price"]),
+                    quantity=parse_wire_string(item["quantity"]),
+                    side=item["side"].upper(),
+                    timestamp=item["timestamp"],
+                )
+            )
         return trades
 
     def get_candles(
@@ -150,16 +156,18 @@ class WallexRestClient:
 
         candles = []
         for t, o, h, low, c, v in zip(timestamps, opens, highs, lows, closes, volumes, strict=True):
-            candles.append(Candle(
-                symbol=Symbol(symbol),
-                resolution=resolution,
-                open_time=t,
-                open=parse_wire_string(o),
-                high=parse_wire_string(h),
-                low=parse_wire_string(low),
-                close=parse_wire_string(c),
-                volume=parse_wire_string(v),
-            ))
+            candles.append(
+                Candle(
+                    symbol=Symbol(symbol),
+                    resolution=resolution,
+                    open_time=t,
+                    open=parse_wire_string(o),
+                    high=parse_wire_string(h),
+                    low=parse_wire_string(low),
+                    close=parse_wire_string(c),
+                    volume=parse_wire_string(v),
+                )
+            )
 
         return candles
 

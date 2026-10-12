@@ -32,7 +32,9 @@ def create_parser() -> argparse.ArgumentParser:
     fetch_parser = subparsers.add_parser("fetch-candles", help="Download candles")
     fetch_parser.add_argument("symbol", help="Market symbol (e.g., USDTTMN)")
     fetch_parser.add_argument("--resolution", default="60", help="Candle resolution")
-    fetch_parser.add_argument("--from", dest="from_ts", required=True, help="Start timestamp or date")
+    fetch_parser.add_argument(
+        "--from", dest="from_ts", required=True, help="Start timestamp or date"
+    )
     fetch_parser.add_argument("--to", dest="to_ts", required=True, help="End timestamp or date")
     fetch_parser.add_argument("--output", help="Output CSV file")
 
@@ -66,7 +68,9 @@ def create_parser() -> argparse.ArgumentParser:
     optimize_parser.add_argument("--market", default="USDTTMN", help="Market symbol")
     optimize_parser.add_argument("--from", dest="from_ts", required=True, help="Start date")
     optimize_parser.add_argument("--to", dest="to_ts", required=True, help="End date")
-    optimize_parser.add_argument("--iterations", type=int, default=50, help="Random search iterations")
+    optimize_parser.add_argument(
+        "--iterations", type=int, default=50, help="Random search iterations"
+    )
 
     # regime command
     regime_parser = subparsers.add_parser("regime", help="Check current market regime")
@@ -82,6 +86,7 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
 
     if json_format:
         import json
+
         class JSONFormatter(logging.Formatter):
             def format(self, record):
                 log_obj = {
@@ -93,11 +98,10 @@ def setup_logging(level: str = "INFO", json_format: bool = True) -> None:
                 if hasattr(record, "run_id"):
                     log_obj["run_id"] = record.run_id
                 return json.dumps(log_obj)
+
         formatter = JSONFormatter()
     else:
-        formatter = logging.Formatter(
-            "%(asctime)s %(levelname)s %(name)s: %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
@@ -121,7 +125,9 @@ def main(args: list[str] = None) -> int:
         elif parsed.command == "config":
             return cmd_config_check(parsed.file)
         elif parsed.command == "fetch-candles":
-            return cmd_fetch_candles(parsed.symbol, parsed.resolution, parsed.from_ts, parsed.to_ts, parsed.output)
+            return cmd_fetch_candles(
+                parsed.symbol, parsed.resolution, parsed.from_ts, parsed.to_ts, parsed.output
+            )
         elif parsed.command == "backtest":
             return cmd_backtest(parsed.config, parsed.from_ts, parsed.to_ts, parsed.output)
         elif parsed.command == "paper":
@@ -155,7 +161,9 @@ def cmd_markets() -> int:
     print(f"{'Symbol':<12} {'Base':<8} {'Quote':<8} {'Price Prec':<10} {'Amt Prec':<10}")
     print("-" * 60)
     for m in markets:
-        print(f"{m.symbol:<12} {m.base_asset:<8} {m.quote_asset:<8} {m.price_precision:<10} {m.amount_precision:<10}")
+        print(
+            f"{m.symbol:<12} {m.base_asset:<8} {m.quote_asset:<8} {m.price_precision:<10} {m.amount_precision:<10}"
+        )
 
     return 0
 
@@ -168,20 +176,26 @@ def cmd_config_check(config_file: str) -> int:
         print()
         print("Derived values:")
         print(f"  Symbol: {config.market.symbol}")
-        print(f"  Grid range: {config.strategy['grid'].lower_price} - {config.strategy['grid'].upper_price}")
+        print(
+            f"  Grid range: {config.strategy['grid'].lower_price} - {config.strategy['grid'].upper_price}"
+        )
         print(f"  Grid count: {config.strategy['grid'].grid_count}")
         print(f"  Mode: {config.strategy['grid'].mode.value}")
         print(f"  Spacing: {config.strategy['grid'].spacing}")
         print(f"  Levels: {config.strategy['grid'].levels_count}")
         print(f"  Per-grid investment: {config.strategy['grid'].per_grid_investment}")
-        print(f"  Min profit per cycle (after fees): {config.strategy['grid'].min_profit_per_cycle_after_fees}")
+        print(
+            f"  Min profit per cycle (after fees): {config.strategy['grid'].min_profit_per_cycle_after_fees}"
+        )
         return 0
     except Exception as e:
         print(f"✗ Config validation failed: {e}")
         return 1
 
 
-def cmd_fetch_candles(symbol: str, resolution: str, from_ts: str, to_ts: str, output: str | None) -> int:
+def cmd_fetch_candles(
+    symbol: str, resolution: str, from_ts: str, to_ts: str, output: str | None
+) -> int:
     """Download candles."""
     client = WallexRestClient()
 
@@ -193,9 +207,10 @@ def cmd_fetch_candles(symbol: str, resolution: str, from_ts: str, to_ts: str, ou
 
     if output:
         import csv
-        with open(output, 'w', newline='') as f:
+
+        with open(output, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            writer.writerow(["timestamp", "open", "high", "low", "close", "volume"])
             for c in candles:
                 writer.writerow([c.open_time, c.open, c.high, c.low, c.close, c.volume])
         print(f"Saved {len(candles)} candles to {output}")
@@ -209,8 +224,9 @@ def cmd_fetch_candles(symbol: str, resolution: str, from_ts: str, to_ts: str, ou
 def _parse_date(date_str: str) -> int:
     """Parse date string to timestamp."""
     from datetime import datetime
+
     try:
-        dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return int(dt.timestamp())
     except ValueError:
         return int(date_str)
@@ -367,7 +383,7 @@ def cmd_optimize(market: str, from_ts: str, to_ts: str, iterations: int) -> int:
 
     print("\nTop 5 Results:")
     for i, r in enumerate(results[:5]):
-        print(f"  {i+1}. Score: {r.score:.4f}")
+        print(f"  {i + 1}. Score: {r.score:.4f}")
         print(f"     Range: {r.params.lower_price} - {r.params.upper_price}")
         print(f"     Grids: {r.params.grid_count} ({r.params.mode.value})")
         print(f"     Investment: {r.params.total_investment}")

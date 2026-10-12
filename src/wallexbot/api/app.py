@@ -141,7 +141,10 @@ def create_app(
                 "id": r["id"],
                 "status": r.get("status", "unknown"),
                 "market": r.get("config", {}).get("market", {}).get("symbol", "unknown"),
-                "mode": r.get("config", {}).get("strategy", {}).get("grid", {}).get("mode", "unknown"),
+                "mode": r.get("config", {})
+                .get("strategy", {})
+                .get("grid", {})
+                .get("mode", "unknown"),
                 "started_at": r.get("created_at", 0),
                 "stopped_at": r.get("stopped_at", 0),
             }
@@ -193,10 +196,18 @@ def create_app(
             return {
                 "valid": True,
                 "derived": {
-                    "spacing": str(config.strategy['grid'].spacing) if config.strategy['grid'].spacing else None,
-                    "levels_count": config.strategy['grid'].levels_count,
-                    "per_grid_investment": str(config.strategy['grid'].per_grid_investment) if config.strategy['grid'].per_grid_investment else None,
-                    "min_profit_per_cycle_after_fees": str(config.strategy['grid'].min_profit_per_cycle_after_fees) if config.strategy['grid'].min_profit_per_cycle_after_fees else None,
+                    "spacing": str(config.strategy["grid"].spacing)
+                    if config.strategy["grid"].spacing
+                    else None,
+                    "levels_count": config.strategy["grid"].levels_count,
+                    "per_grid_investment": str(config.strategy["grid"].per_grid_investment)
+                    if config.strategy["grid"].per_grid_investment
+                    else None,
+                    "min_profit_per_cycle_after_fees": str(
+                        config.strategy["grid"].min_profit_per_cycle_after_fees
+                    )
+                    if config.strategy["grid"].min_profit_per_cycle_after_fees
+                    else None,
                 },
             }
         except Exception as e:
@@ -269,6 +280,7 @@ def create_app(
     async def backup_database():
         import shutil
         import time
+
         src = "wallexbot.db"
         dst = f"wallexbot.db.backup.{int(time.time())}"
         try:
@@ -280,6 +292,7 @@ def create_app(
     @app.post("/api/admin/vacuum")
     async def vacuum_database():
         import sqlite3
+
         try:
             conn = sqlite3.connect("wallexbot.db")
             conn.execute("VACUUM")
@@ -292,6 +305,7 @@ def create_app(
     async def backup_history():
         import shutil
         import time
+
         src = "wallexbot_history.db"
         dst = f"wallexbot_history.db.backup.{int(time.time())}"
         try:

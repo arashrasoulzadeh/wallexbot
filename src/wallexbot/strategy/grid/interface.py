@@ -98,6 +98,7 @@ class GridStrategy:
         """Initialize grid on start."""
         from wallexbot.strategy.grid.parameters import assign_sides, generate_levels
         from wallexbot.strategy.grid.placement import place_initial_grid
+
         # Generate levels
         levels = generate_levels(
             lower=self.params.lower_price,
@@ -133,16 +134,18 @@ class GridStrategy:
         # Convert placement orders to actions
         actions: list[Action] = []
         for order in placement.orders:
-            actions.append(PlaceAction(
-                type="place",
-                client_id=order.client_id,
-                symbol=order.symbol,
-                side=order.side,
-                order_type=order.order_type,
-                price=order.price,
-                quantity=order.quantity,
-                level_index=order.level_index,
-            ))
+            actions.append(
+                PlaceAction(
+                    type="place",
+                    client_id=order.client_id,
+                    symbol=order.symbol,
+                    side=order.side,
+                    order_type=order.order_type,
+                    price=order.price,
+                    quantity=order.quantity,
+                    level_index=order.level_index,
+                )
+            )
 
         return actions
 
@@ -159,11 +162,13 @@ class GridStrategy:
         exit_action = check_range_exit(current_price, self.params, RangeExitPolicy.PAUSE_AND_ALERT)
         if exit_action:
             actions.append(PauseAction(type="pause", reason=exit_action.reason))
-            actions.append(AlertAction(
-                type="alert",
-                message=exit_action.reason,
-                severity="warning",
-            ))
+            actions.append(
+                AlertAction(
+                    type="alert",
+                    message=exit_action.reason,
+                    severity="warning",
+                )
+            )
 
         return actions
 
@@ -222,25 +227,29 @@ class GridStrategy:
 
         for action in result.actions:
             if action.type == "place":
-                actions.append(PlaceAction(
-                    type="place",
-                    client_id=action.client_id,
-                    symbol=action.symbol,
-                    side=action.side,
-                    order_type=action.order_type,
-                    price=action.price,
-                    quantity=action.quantity,
-                    level_index=action.level_index,
-                ))
+                actions.append(
+                    PlaceAction(
+                        type="place",
+                        client_id=action.client_id,
+                        symbol=action.symbol,
+                        side=action.side,
+                        order_type=action.order_type,
+                        price=action.price,
+                        quantity=action.quantity,
+                        level_index=action.level_index,
+                    )
+                )
                 self.state.set_active_order(
                     action.level_index, action.client_id, action.side.value.lower(), action.quantity
                 )
             elif action.type == "cancel":
-                actions.append(CancelAction(
-                    type="cancel",
-                    client_id=action.client_id,
-                    level_index=action.level_index,
-                ))
+                actions.append(
+                    CancelAction(
+                        type="cancel",
+                        client_id=action.client_id,
+                        level_index=action.level_index,
+                    )
+                )
                 self.state.clear_active_order(action.level_index)
 
         if result.profit != 0:
@@ -251,11 +260,13 @@ class GridStrategy:
         if result.warning:
             actions.append(AlertAction(type="alert", message=result.warning, severity="warning"))
         elif result.cycle_completed:
-            actions.append(AlertAction(
-                type="alert",
-                message=f"Grid cycle completed at level {level_index}",
-                severity="info",
-            ))
+            actions.append(
+                AlertAction(
+                    type="alert",
+                    message=f"Grid cycle completed at level {level_index}",
+                    severity="info",
+                )
+            )
 
         return actions
 

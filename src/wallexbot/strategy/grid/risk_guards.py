@@ -9,6 +9,7 @@ from wallexbot.domain import Clock
 
 class RiskLimitExceeded(Exception):
     """Raised when a risk limit is exceeded."""
+
     pass
 
 
@@ -61,7 +62,9 @@ class TokenBucketRateLimiter:
 def check_max_open_orders(active_count: int, guards: RiskGuards) -> bool:
     """Check max open orders limit."""
     if active_count > guards.max_open_orders:
-        raise RiskLimitExceeded(f"Max open orders exceeded: {active_count} > {guards.max_open_orders}")
+        raise RiskLimitExceeded(
+            f"Max open orders exceeded: {active_count} > {guards.max_open_orders}"
+        )
     return True
 
 
@@ -72,9 +75,13 @@ def check_max_exposure(
 ) -> bool:
     """Check max exposure limits."""
     if quote_exposure > guards.max_exposure_quote:
-        raise RiskLimitExceeded(f"Quote exposure {quote_exposure} exceeds limit {guards.max_exposure_quote}")
+        raise RiskLimitExceeded(
+            f"Quote exposure {quote_exposure} exceeds limit {guards.max_exposure_quote}"
+        )
     if base_exposure > guards.max_exposure_base:
-        raise RiskLimitExceeded(f"Base exposure {base_exposure} exceeds limit {guards.max_exposure_base}")
+        raise RiskLimitExceeded(
+            f"Base exposure {base_exposure} exceeds limit {guards.max_exposure_base}"
+        )
     return True
 
 
@@ -90,10 +97,14 @@ def check_drawdown(
     drawdown = (peak_equity - current_equity) / peak_equity
 
     if drawdown > guards.max_drawdown:
-        raise RiskLimitExceeded(f"Max drawdown exceeded: {drawdown:.2%} > {guards.max_drawdown:.2%}")
+        raise RiskLimitExceeded(
+            f"Max drawdown exceeded: {drawdown:.2%} > {guards.max_drawdown:.2%}"
+        )
 
     if drawdown > guards.daily_loss_limit:
-        raise RiskLimitExceeded(f"Daily loss limit exceeded: {drawdown:.2%} > {guards.daily_loss_limit:.2%}")
+        raise RiskLimitExceeded(
+            f"Daily loss limit exceeded: {drawdown:.2%} > {guards.daily_loss_limit:.2%}"
+        )
 
     return True
 

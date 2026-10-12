@@ -1,6 +1,5 @@
 """Analytics API endpoints."""
 
-
 from fastapi import APIRouter, Query
 
 from wallexbot.analytics.history import HistoryRepository

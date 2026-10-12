@@ -68,7 +68,15 @@ class GridStrategyConfig(BaseModel):
     round_trip_fee_rate: Decimal | None = Field(default=None, exclude=True)
     spacing_pct: Decimal | None = Field(default=None, exclude=True)
 
-    @field_validator("lower_price", "upper_price", "total_investment", "per_grid_qty", "stop_loss_price", "take_profit_price", mode="before")
+    @field_validator(
+        "lower_price",
+        "upper_price",
+        "total_investment",
+        "per_grid_qty",
+        "stop_loss_price",
+        "take_profit_price",
+        mode="before",
+    )
     @classmethod
     def parse_decimal(cls, v: str | None) -> str | None:
         if v is None:
@@ -128,7 +136,9 @@ class RiskConfig(BaseModel):
     max_drawdown: str = Field(default="0.05")
     daily_loss_limit: str = Field(default="0.02")
 
-    @field_validator("max_exposure_quote", "max_exposure_base", "max_drawdown", "daily_loss_limit", mode="before")
+    @field_validator(
+        "max_exposure_quote", "max_exposure_base", "max_drawdown", "daily_loss_limit", mode="before"
+    )
     @classmethod
     def parse_decimal(cls, v: str) -> str:
         return str(v)
@@ -147,7 +157,15 @@ class SimulationConfig(BaseModel):
     min_quantity: str = "0.0001"
     fill_model: str = "conservative"  # "conservative" or "touch"
 
-    @field_validator("initial_balance_quote", "initial_balance_base", "fee_maker", "fee_taker", "min_notional", "min_quantity", mode="before")
+    @field_validator(
+        "initial_balance_quote",
+        "initial_balance_base",
+        "fee_maker",
+        "fee_taker",
+        "min_notional",
+        "min_quantity",
+        mode="before",
+    )
     @classmethod
     def parse_decimal(cls, v: str) -> str:
         return str(v)
@@ -288,7 +306,9 @@ def _check_forbidden_keys(data: dict, prefix: str = "") -> None:
     for key, value in data.items():
         full_key = f"{prefix}.{key}" if prefix else key
         if key.lower() in forbidden:
-            raise ValueError(f"Forbidden key in config: {full_key} (no API keys allowed in this version)")
+            raise ValueError(
+                f"Forbidden key in config: {full_key} (no API keys allowed in this version)"
+            )
         if isinstance(value, dict):
             _check_forbidden_keys(value, full_key)
 
