@@ -18,6 +18,8 @@ from wallexbot.analytics.backtest import Backtester, BacktestResult
 from wallexbot.analytics.replay import candles_to_ticks
 from wallexbot.config.schema import Config
 from wallexbot.engine import BotEngine, EngineConfig, EngineState
+from wallexbot.engine.recovery import recoverable_runs
+from wallexbot.recover import rebuild_engine
 from wallexbot.setup import GridSetup, find_market
 from wallexbot.storage.repository import Repository
 from wallexbot.wallex.client import WallexRestClient
@@ -85,6 +87,10 @@ class RunManager:
                 app_config=config.model_dump(mode="json", by_alias=True),
             )
         )
+        return await self._launch(engine, price_feed, symbol)
+
+    async def _launch(self, engine: BotEngine, price_feed: Any, symbol: str) -> str:
+        """Start an engine in the background and track it under its run id."""
         task = engine.start()
         while not engine.run_id and not task.done():
             await asyncio.sleep(0)
@@ -96,7 +102,28 @@ class RunManager:
         run_id = engine.run_id
         self._runs[run_id] = run
         task.add_done_callback(lambda t: self._on_done(run_id, t))
-        return engine.run_id
+        return run_id
+
+    async def recover_run(self, run_id: str, feed: str = "ws") -> str:
+        """Continue a run that a crash left unfinished; it keeps its id. Raises RecoveryError."""
+        live = self._runs.get(run_id)
+        if live is not None and live.engine.state in (EngineState.RUNNING, EngineState.PAUSED):
+            raise InvalidRunState("run is already live in this process")
+        client = self._client_factory()
+        engine, price_feed, _note = await asyncio.to_thread(
+            rebuild_engine, self.repo, run_id, client, self._feed_factory, feed
+        )
+        symbol = str(engine.config.exchange.market_info().symbol)
+        return await self._launch(engine, price_feed, symbol)
+
+    def recoverable(self) -> list[dict[str, Any]]:
+        """Interrupted runs found in the repository that can be recovered."""
+        live = {
+            rid
+            for rid, run in self._runs.items()
+            if run.engine.state in (EngineState.RUNNING, EngineState.PAUSED)
+        }
+        return recoverable_runs(self.repo, live)
 
     def _on_done(self, run_id: str, task: "asyncio.Task[None]") -> None:
         """Remember the final picture and release the feed, whatever way the run ended."""

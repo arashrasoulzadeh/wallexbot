@@ -30,6 +30,7 @@ def client():
         feed_factory=lambda kind, symbol, c: HoldingFeed([264000, 262500, 265500]),
     )
     with TestClient(create_app(repo=repo, engine_manager=manager, stream_interval=0.05)) as c:
+        c.repo = repo  # type: ignore[attr-defined]
         yield c
 
 
@@ -171,3 +172,81 @@ def test_validation_explains_why_a_grid_is_rejected(client):
 def test_notification_test_does_not_pretend_to_send(client):
     body = client.post("/api/notify/test", json={"message": "hi"}).json()
     assert "not configured" in body["message"].lower()
+
+
+# --- crash recovery through the API ------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+from tests.unit.test_recover import crashed_repo  # noqa: E402
+
+
+@pytest.fixture
+def recovery_client():
+    disk, run_id = asyncio.run(crashed_repo())
+    manager = RunManager(
+        disk,
+        client_factory=lambda: FakeClient(),
+        feed_factory=lambda kind, symbol, c: HoldingFeed([262400, 262600]),
+    )
+    with TestClient(create_app(repo=disk, engine_manager=manager, stream_interval=0.05)) as c:
+        c.run_id = run_id  # type: ignore[attr-defined]
+        c.repo = disk  # type: ignore[attr-defined]
+        yield c
+
+
+def test_an_interrupted_run_is_listed_as_recoverable(recovery_client):
+    [row] = recovery_client.get("/api/runs").json()
+    assert row["id"] == recovery_client.run_id
+    assert row["status"] == "running" and row["recoverable"] is True
+
+
+def test_recovering_continues_the_same_run(recovery_client):
+    run_id = recovery_client.run_id
+    r = recovery_client.post(f"/api/runs/{run_id}/recover")
+    assert r.status_code == 200 and r.json()["id"] == run_id
+
+    run = wait_for(
+        lambda: (
+            (j := recovery_client.get(f"/api/runs/{run_id}").json())["status"]["ticks_processed"]
+            >= 6
+            and j
+        )
+    )
+    assert run["status"]["state"] == "running"
+    assert run["orders"] and run["grid"]["levels"]
+    [row] = recovery_client.get("/api/runs").json()
+    assert row["recoverable"] is False  # live in this process now
+    assert len(recovery_client.get("/api/runs").json()) == 1  # no second run was created
+
+
+def test_a_live_run_cannot_be_recovered_twice(recovery_client):
+    run_id = recovery_client.run_id
+    assert recovery_client.post(f"/api/runs/{run_id}/recover").status_code == 200
+    assert recovery_client.post(f"/api/runs/{run_id}/recover").status_code == 409
+
+
+def test_a_recovered_run_can_be_stopped_like_any_other(recovery_client):
+    run_id = recovery_client.run_id
+    recovery_client.post(f"/api/runs/{run_id}/recover")
+    wait_for(
+        lambda: recovery_client.get(f"/api/runs/{run_id}").json()["status"]["state"] == "running"
+    )
+    assert recovery_client.post(f"/api/runs/{run_id}/stop").json() == {"status": "stopped"}
+    assert recovery_client.repo.get_run(run_id)["status"] == "stopped"
+    assert recovery_client.post(f"/api/runs/{run_id}/recover").status_code == 409  # finished: no
+
+
+def test_recovering_something_that_does_not_exist_or_is_finished(recovery_client):
+    assert recovery_client.post("/api/runs/nope/recover").status_code == 404
+    recovery_client.repo.update_run_status(recovery_client.run_id, "halted", 1)
+    r = recovery_client.post(f"/api/runs/{recovery_client.run_id}/recover")
+    assert r.status_code == 409 and "halted" in r.json()["detail"]
+
+
+def test_a_started_run_saves_its_config_so_it_can_be_recovered_later(client):
+    from wallexbot.config.schema import validate_config
+
+    run_id = start_run(client)
+    stored = client.repo.get_checkpoint(run_id)["app_config"]  # what recovery will read
+    assert validate_config(stored).market.symbol == "USDTTMN"

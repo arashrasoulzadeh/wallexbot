@@ -33,10 +33,19 @@ wb.ready.then(function () {
         $('empty').style.display = runs.length ? 'none' : '';
         runs.sort(function (a, b) { return Number(b.started_at) - Number(a.started_at); });
         cells($('runs'), ['runs.id', 'runs.market', 'runs.status', 'runs.started', 'common.open'], runs.map(function (r) {
+            // a run that is "running" in the database but not in this process died in a crash
+            const status = r.recoverable ? wb.el('span', { class: 'badge paused', text: wb.t('runs.interrupted') }) : wb.badge(r.status);
+            const buttons = wb.el('td', {}, wb.el('button', { class: 'secondary', type: 'button', text: wb.t('common.open'),
+                onclick: function () { selected = r.id; detail(); } }));
+            if (r.recoverable) {
+                buttons.appendChild(document.createTextNode(' '));
+                buttons.appendChild(wb.el('button', { type: 'button', text: wb.t('recover.button'), onclick: async function () {
+                    try { await wb.post('/api/runs/' + r.id + '/recover', {}); wb.write(wb.KEYS.paperRun, r.id); window.location.href = '/paper'; }
+                    catch (e) { window.alert(e.message); }
+                } }));
+            }
             return wb.el('tr', {}, wb.el('td', { text: r.id }), wb.el('td', { text: r.market }),
-                wb.el('td', {}, wb.badge(r.status)), wb.el('td', { text: wb.time(r.started_at) }),
-                wb.el('td', {}, wb.el('button', { class: 'secondary', type: 'button', text: wb.t('common.open'),
-                    onclick: function () { selected = r.id; detail(); } })));
+                wb.el('td', {}, status), wb.el('td', { text: wb.time(r.started_at) }), buttons);
         }));
     }
 

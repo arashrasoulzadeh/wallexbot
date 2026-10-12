@@ -16,6 +16,7 @@ from starlette.websockets import WebSocketDisconnect
 from wallexbot.api.manager import InvalidRunState, RunManager, UnknownRun
 from wallexbot.config.defaults import default_config
 from wallexbot.config.schema import validate_config
+from wallexbot.engine.recovery import RecoveryError
 from wallexbot.storage.repository import InMemoryRepository, Repository
 from wallexbot.wallex.client import WallexRestClient
 
@@ -127,8 +128,10 @@ def create_app(
     @app.get("/api/runs")
     async def list_runs() -> Any:
         rows = []
+        recoverable = {r["id"] for r in manager.recoverable()}
         for run in repo.list_runs():
             row = _repo_summary(run)
+            row["recoverable"] = row["id"] in recoverable
             snap = manager.snapshot(row["id"])
             if snap is not None:  # this process owns the run: show its live state
                 row["status"] = snap["status"]["state"]
@@ -318,6 +321,20 @@ def create_app(
     @app.post("/api/runs/{run_id}/kill")
     async def kill_run(run_id: str) -> Any:
         return await _control("kill_run", run_id, "killed")
+
+    class RecoverRequest(BaseModel):
+        feed: str = Field(default="ws", pattern="^(ws|poll)$")
+
+    @app.post("/api/runs/{run_id}/recover")
+    async def recover_run(run_id: str, request: RecoverRequest | None = None) -> Any:
+        """Continue a run that a crash left unfinished (same id, same record)."""
+        if not repo.get_run(run_id):
+            raise HTTPException(404, "Run not found")
+        try:
+            await manager.recover_run(run_id, request.feed if request else "ws")
+        except (InvalidRunState, RecoveryError) as e:
+            raise HTTPException(409, str(e)) from e
+        return {"id": run_id, "status": "running"}
 
     # Notifications -----------------------------------------------------------------
 

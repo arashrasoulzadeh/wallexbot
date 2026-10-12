@@ -22,6 +22,7 @@ def engine_manager():
     manager = Mock(spec=RunManager)  # async methods become AsyncMock, sync ones stay sync
     manager.snapshot.return_value = None
     manager.live_runs.return_value = []
+    manager.recoverable.return_value = []
     manager.start_backtest = AsyncMock(return_value="backtest_123")
     manager.start_paper_run = AsyncMock(return_value="paper_123")
     manager.pause_run = AsyncMock()

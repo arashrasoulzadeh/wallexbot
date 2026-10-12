@@ -41,9 +41,34 @@ the run, and says why in the summary. By hand: the **Kill switch** button on the
 
 ## Crash recovery
 
-**Not implemented.** A run is recorded with `--db` (run, orders, fills, events), but restarting does
-not resume it; a new run starts a fresh grid at the current price. Since paper orders exist only in
-memory, nothing can be left resting on an exchange after a crash.
+A paper run saves a **checkpoint** (the whole state of its simulated exchange, grid, balances and
+bookkeeping) to the database whenever something changes, and at least every 20 prices. This needs
+`--db` (CLI) or `wallexbot ui --db` (dashboard). If the process dies (crash, power loss, `kill -9`),
+the run is left marked `running` with its checkpoint.
+
+```bash
+wallexbot paper --resume --db runs.db            # the interrupted run (asks if there are several)
+wallexbot paper --resume RUN_ID --db runs.db     # a specific one
+```
+In the dashboard, an interrupted run shows as **Interrupted** on the Runs page and a **Recover**
+banner appears on the Paper trading page.
+
+What recovery does:
+1. Restores the exact state: balances, resting orders (including part-filled ones), grid levels,
+   profit so far, fees, risk baselines. The run keeps its id and record.
+2. Fetches the public one-minute prices for the downtime and replays them on simulated time, so
+   orders that would have filled while the bot was off do fill, at their own limit prices, as resting
+   orders would on a real exchange.
+3. Carries on with live prices.
+
+Limits to know about:
+- Replay uses one-minute candles (four price points each), not the real trade prints, so what
+  happened inside a minute is approximated. A gap longer than 24 hours is **not** replayed; the first
+  live price is used instead, and the recovery note says so.
+- Prices seen after the last checkpoint and before the crash are covered by the same replay.
+- Only runs that were interrupted can be recovered. A run you stopped, or that the kill switch or a
+  risk limit halted, is finished and is refused (with the reason).
+- This is a simulator, so a crash can never leave real orders on an exchange: there are none.
 
 See [paper-trading.md](paper-trading.md) for how a paper run behaves.
 

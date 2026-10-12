@@ -20,6 +20,7 @@
     <div id="message"></div>
 </div>
 
+<div id="recover"></div>
 <div id="idle" class="note" data-i18n="paper.noRun"></div>
 
 <div id="live" style="display:none">
@@ -160,10 +161,34 @@ wb.ready.then(function () {
         };
     }
 
+    // runs a crash left unfinished can be continued where they stopped
+    async function offerRecovery() {
+        const box = wb.clear($('recover'));
+        if (runId && !finished) { return; }
+        let runs;
+        try { runs = await wb.api('/api/runs'); } catch (e) { return; }
+        const crashed = runs.filter(function (r) { return r.recoverable; });
+        if (!crashed.length) { return; }
+        const card = wb.el('div', { class: 'card' }, wb.el('h2', { text: wb.t('recover.title') }),
+            wb.el('p', { class: 'muted', text: wb.t('recover.text') }));
+        crashed.forEach(function (r) {
+            card.appendChild(wb.el('p', {}, wb.el('strong', { text: r.id + ' ' + r.market + ' ' }),
+                wb.el('button', { type: 'button', text: wb.t('recover.button'), onclick: async function () {
+                    try {
+                        await wb.post('/api/runs/' + r.id + '/recover', { feed: $('feed').value });
+                        runId = r.id; finished = false; wb.write(wb.KEYS.paperRun, runId);
+                        wb.clear(box); say('ok', wb.t('recover.done')); connect();
+                    } catch (e) { say('error', e.message); }
+                } })));
+        });
+        box.appendChild(card);
+    }
+
     function forget() {
         wb.remove(wb.KEYS.paperRun); runId = null; finished = false;
         $('live').style.display = 'none'; $('idle').style.display = '';
         wb.clear($('state-badge')); setButtons('idle');
+        offerRecovery();
     }
 
     async function control(action) {
@@ -191,7 +216,7 @@ wb.ready.then(function () {
     $('kill').addEventListener('click', function () {
         if (window.confirm(wb.t('paper.confirmKill'))) { control('kill'); }
     });
-    document.addEventListener('wb:lang', function () { if (last) { render(last); } });
+    document.addEventListener('wb:lang', function () { if (last) { render(last); } offerRecovery(); });
 
     setButtons('idle');
     setConn(false);
@@ -199,8 +224,8 @@ wb.ready.then(function () {
         wb.api('/api/runs/' + runId).then(function (run) {
             render(run);
             if (FINAL.indexOf(run.status.state) === -1) { connect(); } else { finished = true; }
-        }).catch(function () { forget(); });
-    }
+        }).catch(function () { forget(); }).then(offerRecovery);
+    } else { offerRecovery(); }
 });
 </script>
 {% endblock %}

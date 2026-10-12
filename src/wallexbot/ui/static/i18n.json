@@ -128,7 +128,12 @@
     "runs.detail": "Run details",
     "runs.select": "Select a run to see its details.",
     "na.title": "Not available yet",
-    "na.text": "This page is not implemented yet."
+    "na.text": "This page is not implemented yet.",
+    "recover.title": "A previous run did not finish",
+    "recover.text": "It was running when the bot stopped. Recover it to continue with the same orders and balances; prices from the downtime are replayed.",
+    "recover.button": "Recover",
+    "recover.done": "Run recovered.",
+    "runs.interrupted": "Interrupted"
   },
   "fa": {
     "app.name": "ربات گرید والکس",
@@ -259,6 +264,11 @@
     "runs.detail": "جزئیات اجرا",
     "runs.select": "برای دیدن جزئیات یک اجرا را انتخاب کنید.",
     "na.title": "هنوز در دسترس نیست",
-    "na.text": "این صفحه هنوز پیاده‌سازی نشده است."
+    "na.text": "این صفحه هنوز پیاده‌سازی نشده است.",
+    "recover.title": "یک اجرای قبلی کامل نشد",
+    "recover.text": "این اجرا هنگام توقف ربات در حال کار بود. آن را بازیابی کنید تا با همان سفارش‌ها و موجودی‌ها ادامه یابد؛ قیمت‌های زمان قطعی دوباره اجرا می‌شود.",
+    "recover.button": "بازیابی",
+    "recover.done": "اجرا بازیابی شد.",
+    "runs.interrupted": "نیمه‌تمام"
   }
 }

@@ -81,5 +81,14 @@ API (JSON, all paper only): `POST /api/paper-runs`, `GET /api/runs`, `GET /api/r
 fit the run's state (e.g. pausing a stopped run) is 409. There is no endpoint that accepts an API key
 and no live mode.
 
-Live figures exist for runs of the current server process; after a restart, older runs are listed
-from the database (with `--db`) but without live detail.
+Live figures exist for runs of the current server process. After a restart, runs are listed from the
+database (with `--db`); one that was interrupted can be recovered (see the runbook), and the others
+show their stored record.
+
+`POST /api/runs/{id}/recover` continues an interrupted run (404 unknown, 409 if it is already live or
+finished).
+
+## Crash recovery
+
+`wallexbot paper --resume --db runs.db` continues a run that a crash interrupted, from its last
+checkpoint, replaying the downtime's public prices first. Details and limits: [runbook.md](runbook.md).

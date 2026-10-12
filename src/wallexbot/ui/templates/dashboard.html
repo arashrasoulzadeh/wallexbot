@@ -21,7 +21,7 @@ wb.ready.then(function () {
         const runsBox = wb.clear(document.getElementById('runs'));
         try {
             const runs = await wb.api('/api/runs');
-            const live = runs.filter(function (r) { return r.status === 'running' || r.status === 'paused'; });
+            const live = runs.filter(function (r) { return (r.status === 'running' || r.status === 'paused') && !r.recoverable; });
             if (!live.length) {
                 runsBox.appendChild(wb.el('p', { class: 'muted', text: wb.t('dash.noRuns') }));
             } else {
