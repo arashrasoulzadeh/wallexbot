@@ -1,13 +1,13 @@
 """Tests for Order, Fill, Trade, Balance, OrderRequest, FeeSchedule models."""
 
 from decimal import Decimal
+
 import pytest
 
-from wallexbot.domain.order import Order, OrderRequest, Fill, Trade
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-from wallexbot.domain.market import Symbol, Side, OrderType, OrderStatus
-from wallexbot.domain.money import quantize_down
+from wallexbot.domain.market import OrderStatus, OrderType, Side, Symbol
+from wallexbot.domain.order import Fill, Order, OrderRequest, Trade
 
 
 class TestOrder:
@@ -156,7 +156,12 @@ class TestOrder:
             assert order.is_active is True
 
         # Inactive orders
-        for status in [OrderStatus.FILLED, OrderStatus.CANCELED, OrderStatus.REJECTED, OrderStatus.UNKNOWN]:
+        for status in [
+            OrderStatus.FILLED,
+            OrderStatus.CANCELED,
+            OrderStatus.REJECTED,
+            OrderStatus.UNKNOWN,
+        ]:
             order = Order(
                 id="ord_123",
                 client_id="GRID_1_0_1",
@@ -166,7 +171,9 @@ class TestOrder:
                 price=Decimal("100.00"),
                 quantity=Decimal("10.0000"),
                 status=status,
-                filled_quantity=Decimal("10.0000") if status == OrderStatus.FILLED else Decimal("0"),
+                filled_quantity=Decimal("10.0000")
+                if status == OrderStatus.FILLED
+                else Decimal("0"),
                 fee=Decimal("0"),
                 fee_asset="TMN",
                 is_maker=True,
@@ -299,7 +306,7 @@ class TestBalance:
 
     def test_balance_lock_insufficient(self):
         balance = Balance(free=Decimal("100.00"), locked=Decimal("0"))
-        with pytest.raises(ValueError, match="insufficient"):
+        with pytest.raises(ValueError, match="(?i)insufficient"):
             balance.lock(Decimal("200.00"))
 
 
@@ -362,6 +369,6 @@ class TestMinNotionalRule:
         assert ok is False
         assert "notional" in msg.lower()
 
-        ok, msg = rule.validate(Decimal("1000.00"), Decimal("0.00005"))
+        ok, msg = rule.validate(Decimal("200000.00"), Decimal("0.00009"))
         assert ok is False
         assert "quantity" in msg.lower() or "qty" in msg.lower()

@@ -1,18 +1,20 @@
 """Tests for bot engine."""
 
 from decimal import Decimal
-import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 
-from wallexbot.engine.bot import BotEngine, EngineConfig
-from wallexbot.engine.actions import ActionExecutor
-from wallexbot.strategy.grid.interface import GridStrategy
-from wallexbot.strategy.grid.parameters import GridParameters, GridMode
-from wallexbot.domain.market import Market, Symbol
-from wallexbot.sim.exchange import SimulatedExchange
-from wallexbot.wallex.price_feed import PriceFeed, PriceTick, PriceFeedReplay
+import pytest
+
+from tests.helpers.clock import FakeClock
+from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-from wallexbot.tests.helpers.clock import FakeClock
+from wallexbot.domain.market import Market, Symbol
+from wallexbot.engine.actions import ActionExecutor
+from wallexbot.engine.bot import BotEngine, EngineConfig
+from wallexbot.sim.exchange import SimulatedExchange
+from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.strategy.grid.parameters import GridMode, GridParameters
+from wallexbot.wallex.price_feed import PriceFeedReplay, PriceTick
 
 
 class TestActionExecutor:
@@ -28,8 +30,8 @@ class TestActionExecutor:
 
     def test_place_action_generates_idempotent_client_id(self, executor):
         """Place action generates idempotent client_id."""
+        from wallexbot.domain.market import OrderType, Side, Symbol
         from wallexbot.strategy.grid.interface import PlaceAction
-        from wallexbot.domain.market import Symbol, Side, OrderType
 
         action = PlaceAction(
             type="place",
@@ -84,21 +86,33 @@ class TestBotEngine:
     def exchange(self, market):
         return SimulatedExchange(
             market=market,
-            fee_schedule=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")),
-            min_notional_rule=MinNotionalRule(min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")),
+            fee_schedule_config=FeeSchedule(
+                maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")
+            ),
+            min_notional_rule=MinNotionalRule(
+                min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
+            ),
             initial_balances={
-                "TMN": Mock(free=Decimal("2000000.00"), locked=Decimal("0")),
-                "USDT": Mock(free=Decimal("0"), locked=Decimal("0")),
+                "TMN": Balance(free=Decimal("2000000.00"), locked=Decimal("0")),
+                "USDT": Balance(free=Decimal("100.00"), locked=Decimal("0")),
             },
         )
 
     @pytest.fixture
     def price_feed(self):
         ticks = [
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("100.00"), timestamp=1000, source="test"),
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("99.00"), timestamp=1001, source="test"),
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("95.00"), timestamp=1002, source="test"),
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("105.00"), timestamp=1003, source="test"),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("100.00"), timestamp=1000, source="test"
+            ),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("99.00"), timestamp=1001, source="test"
+            ),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("95.00"), timestamp=1002, source="test"
+            ),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("105.00"), timestamp=1003, source="test"
+            ),
         ]
         return PriceFeedReplay(ticks)
 

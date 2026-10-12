@@ -4,11 +4,22 @@ from dataclasses import dataclass
 from typing import Optional
 import asyncio
 import logging
+import time
 
-from wallexbot.tests.helpers.clock import Clock, RealClock
+from wallexbot.domain import Clock
 
 
 logger = logging.getLogger(__name__)
+
+
+class _RealClock:
+    """Real system clock implementation."""
+
+    def now(self) -> float:
+        return time.time()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
 
 
 @dataclass
@@ -24,7 +35,7 @@ class TelegramNotifier:
 
     def __post_init__(self) -> None:
         if self.clock is None:
-            self.clock = RealClock()
+            self.clock = _RealClock()
         self._queue = asyncio.Queue()
 
     async def start(self) -> None:
@@ -98,7 +109,7 @@ class TelegramNotifier:
         if response.status_code == 429:
             # Rate limited - retry after delay
             retry_after = response.json().get("parameters", {}).get("retry_after", 5)
-            await asyncio.sleep(retry_after)
+            await self.clock.async_sleep(retry_after)
             response = await client.post(url, json=data)
 
         if response.status_code != 200:

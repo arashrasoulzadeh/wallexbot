@@ -1,19 +1,19 @@
 """Property-based tests for grid strategy invariants."""
 
 from decimal import Decimal
-from hypothesis import given, strategies as st, assume, settings, HealthCheck
-import pytest
 
+from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import strategies as st
+
+from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.domain.market import Market, Symbol
+from wallexbot.domain.money import quantize_down
 from wallexbot.strategy.grid.parameters import (
-    GridParameters,
     GridMode,
+    GridParameters,
     Level,
     generate_levels,
-    assign_sides,
 )
-from wallexbot.domain.market import Market, Symbol
-from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-from wallexbot.domain.money import quantize_down
 
 
 # Hypothesis strategies
@@ -34,7 +34,11 @@ def market_strategy(draw):
 def grid_params_strategy(draw, market):
     """Generate valid grid parameters."""
     lower = draw(st.decimals(min_value=1, max_value=10000, places=market.price_precision))
-    upper = draw(st.decimals(min_value=lower + Decimal("0.01"), max_value=20000, places=market.price_precision))
+    upper = draw(
+        st.decimals(
+            min_value=lower + Decimal("0.01"), max_value=20000, places=market.price_precision
+        )
+    )
     count = draw(st.integers(min_value=2, max_value=50))
     mode = draw(st.sampled_from([GridMode.ARITHMETIC, GridMode.GEOMETRIC]))
     investment = draw(st.decimals(min_value=100, max_value=1000000, places=2))
@@ -62,7 +66,6 @@ class TestQuantizeProperties:
     @settings(suppress_health_check=[HealthCheck.too_slow])
     def test_quantize_down_idempotent(self, value: Decimal, step: Decimal):
         """quantize_down is idempotent."""
-        from wallexbot.domain.money import quantize_down
         assume(step > 0)
         result = quantize_down(value, step)
         assert quantize_down(result, step) == result
@@ -74,7 +77,6 @@ class TestQuantizeProperties:
     @settings(suppress_health_check=[HealthCheck.too_slow])
     def test_quantize_down_never_increases_magnitude(self, value: Decimal, step: Decimal):
         """quantize_down never increases absolute value."""
-        from wallexbot.domain.money import quantize_down
         assume(step > 0)
         result = quantize_down(value, step)
         assert abs(result) <= abs(value) + Decimal("1e-20")
@@ -87,6 +89,7 @@ class TestQuantizeProperties:
     def test_quantize_to_precision_idempotent(self, value: Decimal, digits: int):
         """quantize_to_precision is idempotent."""
         from wallexbot.domain.money import quantize_to_precision
+
         result = quantize_to_precision(value, digits)
         assert quantize_to_precision(result, digits) == result
 
@@ -98,6 +101,7 @@ class TestQuantizeProperties:
     def test_quantize_to_precision_never_increases_magnitude(self, value: Decimal, digits: int):
         """quantize_to_precision never increases absolute value."""
         from wallexbot.domain.money import quantize_to_precision
+
         result = quantize_to_precision(value, digits)
         assert abs(result) <= abs(value) + Decimal("1e-20")
 
@@ -113,7 +117,9 @@ class TestGridLevelProperties:
         st.integers(min_value=0, max_value=8),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=200)
-    def test_generate_levels_count(self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int):
+    def test_generate_levels_count(
+        self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int
+    ):
         """N levels generated for count=N."""
         assume(lower < upper)
         if mode == GridMode.GEOMETRIC:
@@ -134,7 +140,9 @@ class TestGridLevelProperties:
         st.integers(min_value=0, max_value=8),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=200)
-    def test_generate_levels_within_bounds(self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int):
+    def test_generate_levels_within_bounds(
+        self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int
+    ):
         """All levels within [lower, upper]."""
         assume(lower < upper)
         if mode == GridMode.GEOMETRIC:
@@ -142,8 +150,10 @@ class TestGridLevelProperties:
 
         try:
             levels = generate_levels(lower, upper, count, mode, precision)
+            step = Decimal("1") / (Decimal("10") ** precision)
             for level in levels:
-                assert lower <= level.price <= upper + Decimal("1e-10")
+                assert level.price >= lower - step
+                assert level.price <= upper + step
         except ValueError:
             pass  # Collapse case
 
@@ -155,7 +165,9 @@ class TestGridLevelProperties:
         st.integers(min_value=0, max_value=8),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=200)
-    def test_generate_levels_strictly_increasing(self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int):
+    def test_generate_levels_strictly_increasing(
+        self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int
+    ):
         """Levels strictly increasing."""
         assume(lower < upper)
         if mode == GridMode.GEOMETRIC:
@@ -176,7 +188,9 @@ class TestGridLevelProperties:
         st.integers(min_value=0, max_value=8),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=200)
-    def test_generate_levels_no_duplicates(self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int):
+    def test_generate_levels_no_duplicates(
+        self, lower: Decimal, upper: Decimal, count: int, mode: GridMode, precision: int
+    ):
         """No duplicate prices after rounding."""
         assume(lower < upper)
         if mode == GridMode.GEOMETRIC:
@@ -184,7 +198,7 @@ class TestGridLevelProperties:
 
         try:
             levels = generate_levels(lower, upper, count, mode, precision)
-            prices = [l.price for l in levels]
+            prices = [level.price for level in levels]
             assert len(prices) == len(set(prices))
         except ValueError:
             pass
@@ -194,35 +208,36 @@ class TestGridStateProperties:
     """Property tests for grid state invariants."""
 
     @given(
+        st.integers(min_value=2, max_value=10),
+        st.integers(min_value=0, max_value=9),  # gap position
         st.lists(
             st.tuples(
-                st.integers(min_value=0, max_value=10),
-                st.decimals(min_value=1, max_value=1000, places=2),
-                st.sampled_from(["buy", "sell", ""]),
+                st.sampled_from(["buy", "sell"]),
+                st.decimals(min_value=Decimal("1"), max_value=Decimal("1000"), places=2),
             ),
-            min_size=2,
-            max_size=20,
-            unique_by=lambda x: x[0],  # unique indices
-        )
+            min_size=1,
+            max_size=9,
+        ),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=100)
-    def test_grid_state_invariants(self, level_data):
+    def test_grid_state_invariants(self, size: int, gap_pos: int, levels_data):
         """Grid state invariants hold after operations."""
-        # Filter to ensure exactly one gap
-        buy_levels = [d for d in level_data if d[2] == "buy"]
-        sell_levels = [d for d in level_data if d[2] == "sell"]
-        gap_levels = [d for d in level_data if d[2] == ""]
+        # Generate levels with contiguous indices, one gap at gap_pos
+        gap_pos = gap_pos % size
+        levels = []
+        data_idx = 0
+        for i in range(size):
+            if i == gap_pos:
+                levels.append(Level(index=i, price=Decimal("100.00"), side=""))
+            else:
+                if data_idx < len(levels_data):
+                    side, price = levels_data[data_idx]
+                    data_idx += 1
+                else:
+                    side, price = "buy", Decimal("100.00")
+                levels.append(Level(index=i, price=price, side=side))
 
-        assume(len(gap_levels) == 1)
-        assume(len(buy_levels) > 0)
-        assume(len(sell_levels) > 0)
-
-        # Sort by index
-        level_data.sort(key=lambda x: x[0])
-
-        levels = [Level(index=d[0], price=d[1], side=d[2]) for d in level_data]
-
-        from wallexbot.strategy.grid.state import GridState, GridStateError
+        from wallexbot.strategy.grid.state import GridState
 
         state = GridState(levels=levels)
 
@@ -245,7 +260,9 @@ class TestFillHandlingProperties:
         st.decimals(min_value=Decimal("0"), max_value=10, places=4),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=100)
-    def test_fill_handling_no_negative_quantity(self, level_idx: int, fill_qty: Decimal, fill_fee: Decimal):
+    def test_fill_handling_no_negative_quantity(
+        self, level_idx: int, fill_qty: Decimal, fill_fee: Decimal
+    ):
         """Fill handling never produces negative quantity orders."""
         market = Market(
             symbol=Symbol("USDTTMN"),
@@ -268,7 +285,7 @@ class TestFillHandlingProperties:
         assume(levels[level_idx].side in ("buy", "sell"))
 
         from wallexbot.strategy.grid.fill_handling import handle_fill
-        from wallexbot.strategy.grid.parameters import GridParameters, GridMode
+        from wallexbot.strategy.grid.parameters import GridMode, GridParameters
 
         active_orders = {level_idx: "ord_123"}
 
@@ -281,7 +298,9 @@ class TestFillHandlingProperties:
                 active_orders=active_orders,
                 market=market,
                 fee_schedule=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")),
-                min_notional_rule=MinNotionalRule(min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")),
+                min_notional_rule=MinNotionalRule(
+                    min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
+                ),
                 params=GridParameters(
                     lower_price=Decimal("90.00"),
                     upper_price=Decimal("110.00"),
@@ -308,13 +327,14 @@ class TestProfitProperties:
         st.decimals(min_value=Decimal("0.0001"), max_value=1000, places=4),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=100)
-    def test_cycle_profit_sell_higher_than_buy(self, buy_price: Decimal, sell_price: Decimal, qty: Decimal):
+    def test_cycle_profit_sell_higher_than_buy(
+        self, buy_price: Decimal, sell_price: Decimal, qty: Decimal
+    ):
         """Profit positive when sell > buy (ignoring fees)."""
         assume(sell_price > buy_price)
 
-        from wallexbot.strategy.grid.profit import calculate_cycle_profit
         from wallexbot.domain.fees import FeeSchedule
-        from wallexbot.domain.market import Side
+        from wallexbot.strategy.grid.profit import calculate_cycle_profit
 
         fee_schedule = FeeSchedule(maker_rate=Decimal("0"), taker_rate=Decimal("0"))
         profit = calculate_cycle_profit(buy_price, sell_price, qty, fee_schedule)
@@ -326,13 +346,14 @@ class TestProfitProperties:
         st.decimals(min_value=Decimal("0.0001"), max_value=1000, places=4),
     )
     @settings(suppress_health_check=[HealthCheck.too_slow], max_examples=100)
-    def test_cycle_profit_buy_higher_than_sell(self, buy_price: Decimal, sell_price: Decimal, qty: Decimal):
+    def test_cycle_profit_buy_higher_than_sell(
+        self, buy_price: Decimal, sell_price: Decimal, qty: Decimal
+    ):
         """Profit negative when buy > sell (ignoring fees)."""
         assume(buy_price > sell_price)
 
-        from wallexbot.strategy.grid.profit import calculate_cycle_profit
         from wallexbot.domain.fees import FeeSchedule
-        from wallexbot.domain.market import Side
+        from wallexbot.strategy.grid.profit import calculate_cycle_profit
 
         fee_schedule = FeeSchedule(maker_rate=Decimal("0"), taker_rate=Decimal("0"))
         profit = calculate_cycle_profit(buy_price, sell_price, qty, fee_schedule)

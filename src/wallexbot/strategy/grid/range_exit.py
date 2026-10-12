@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
+from typing import Literal
 
 from wallexbot.strategy.grid.parameters import GridParameters
 from wallexbot.domain.market import Symbol

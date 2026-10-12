@@ -1,10 +1,10 @@
 """Tests for Symbol and Market models."""
 
 from decimal import Decimal
+
 import pytest
 
-from wallexbot.domain.market import Market, Symbol
-from wallexbot.domain.enums import Side, OrderType, OrderStatus
+from wallexbot.domain.market import Market, OrderStatus, OrderType, Side, Symbol
 
 
 class TestSymbol:
@@ -13,7 +13,7 @@ class TestSymbol:
     def test_symbol_creation(self):
         symbol = Symbol("USDTTMN")
         assert str(symbol) == "USDTTMN"
-        assert symbol.value == "USDTTMN"
+        assert symbol == "USDTTMN"
 
     def test_symbol_equality(self):
         assert Symbol("USDTTMN") == Symbol("USDTTMN")
@@ -101,7 +101,6 @@ class TestMarket:
             amount_precision=4,
             is_spot=True,
         )
-        from wallexbot.domain.money import quantize_down
         assert market.quantize_price(Decimal("123.456")) == Decimal("123.45")
         assert market.quantize_price(Decimal("123.45")) == Decimal("123.45")
 
@@ -114,7 +113,6 @@ class TestMarket:
             amount_precision=4,
             is_spot=True,
         )
-        from wallexbot.domain.money import quantize_down
         assert market.quantize_amount(Decimal("1.23456")) == Decimal("1.2345")
         assert market.quantize_amount(Decimal("1.2345")) == Decimal("1.2345")
 

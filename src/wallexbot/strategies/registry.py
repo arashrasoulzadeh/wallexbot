@@ -74,12 +74,6 @@ class StrategyRegistry:
         if not plugin:
             return [f"Strategy {name} not found"]
 
-        # Test required methods exist
-        required_methods = ["on_start", "on_price", "on_fill", "on_stop"]
-        for method in required_methods:
-            if not hasattr(plugin, method):
-                errors.append(f"Missing required method: {method}")
-
         # Test strategy instantiation
         try:
             market = Market(
@@ -91,22 +85,29 @@ class StrategyRegistry:
                 is_spot=True,
             )
             params = GridParameters(
-                lower_price=90,
-                upper_price=110,
+                lower_price="90.00",
+                upper_price="110.00",
                 grid_count=10,
                 mode="arithmetic",
-                total_investment=10000,
+                total_investment="10000.00",
             )
             strategy = plugin.create_strategy(market, params)
 
+            # Test required methods exist on strategy
+            required_methods = ["on_start", "on_price", "on_fill", "on_stop"]
+            for method in required_methods:
+                if not hasattr(strategy, method):
+                    errors.append(f"Missing required method: {method}")
+
+            from decimal import Decimal
             # Test method signatures
-            actions = strategy.on_start(current_price=100, timestamp=0)
+            actions = strategy.on_start(current_price=Decimal("100"), timestamp=0)
             assert isinstance(actions, list)
 
-            actions = strategy.on_price(current_price=100, timestamp=0)
+            actions = strategy.on_price(current_price=Decimal("100"), timestamp=0)
             assert isinstance(actions, list)
 
-            actions = strategy.on_fill(level_index=0, fill_qty=1, fill_fee=0.01, fill_fee_asset="TMN", timestamp=0)
+            actions = strategy.on_fill(level_index=0, fill_qty=Decimal("1"), fill_fee=Decimal("0.01"), fill_fee_asset="TMN", timestamp=0)
             assert isinstance(actions, list)
 
             actions = strategy.on_stop(timestamp=0)

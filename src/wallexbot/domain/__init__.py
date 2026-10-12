@@ -20,6 +20,7 @@ from wallexbot.domain.order import (
 )
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
+from wallexbot.domain.clock import Clock
 
 __all__ = [
     "quantize_down",
@@ -37,4 +38,5 @@ __all__ = [
     "Balance",
     "FeeSchedule",
     "MinNotionalRule",
+    "Clock",
 ]

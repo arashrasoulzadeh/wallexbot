@@ -15,7 +15,7 @@ from wallexbot.strategy.grid.interface import (
 from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.domain.order import OrderRequest
 from wallexbot.domain.market import Symbol, Side, OrderType, OrderStatus
-from wallexbot.tests.helpers.clock import Clock
+from wallexbot.domain import Clock
 
 
 @dataclass

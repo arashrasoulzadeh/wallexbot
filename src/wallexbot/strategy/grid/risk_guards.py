@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
-from wallexbot.tests.helpers.clock import Clock
+from wallexbot.domain import Clock
 
 
 class RiskLimitExceeded(Exception):
@@ -60,8 +60,8 @@ class TokenBucketRateLimiter:
 
 def check_max_open_orders(active_count: int, guards: RiskGuards) -> bool:
     """Check max open orders limit."""
-    if active_count >= guards.max_open_orders:
-        raise RiskLimitExceeded(f"Max open orders exceeded: {active_count} >= {guards.max_open_orders}")
+    if active_count > guards.max_open_orders:
+        raise RiskLimitExceeded(f"Max open orders exceeded: {active_count} > {guards.max_open_orders}")
     return True
 
 

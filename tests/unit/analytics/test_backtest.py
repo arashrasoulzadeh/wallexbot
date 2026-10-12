@@ -1,18 +1,17 @@
 """Tests for backtester."""
 
 from decimal import Decimal
-import pytest
-from unittest.mock import Mock
 
-from wallexbot.analytics.backtest import Backtester, BacktestResult, BacktestMetrics
-from wallexbot.analytics.data_store import HistoricalDataStore
-from wallexbot.strategy.grid.interface import GridStrategy
-from wallexbot.strategy.grid.parameters import GridParameters, GridMode
+import pytest
+
+from wallexbot.analytics.backtest import Backtester
+from wallexbot.domain.balance import Balance
+from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, Symbol
 from wallexbot.sim.exchange import SimulatedExchange
+from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.strategy.grid.parameters import GridMode, GridParameters
 from wallexbot.wallex.price_feed import PriceFeedReplay, PriceTick
-from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-from wallexbot.tests.helpers.clock import FakeClock
 
 
 class TestHistoricalDataStore:
@@ -59,11 +58,15 @@ class TestBacktester:
     def exchange(self, market):
         return SimulatedExchange(
             market=market,
-            fee_schedule=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")),
-            min_notional_rule=MinNotionalRule(min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")),
+            fee_schedule_config=FeeSchedule(
+                maker_rate=Decimal("0.001"), taker_rate=Decimal("0.002")
+            ),
+            min_notional_rule=MinNotionalRule(
+                min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
+            ),
             initial_balances={
-                "TMN": Mock(free=Decimal("2000000.00"), locked=Decimal("0")),
-                "USDT": Mock(free=Decimal("0"), locked=Decimal("0")),
+                "TMN": Balance(free=Decimal("2000000.00"), locked=Decimal("0")),
+                "USDT": Balance(free=Decimal("0"), locked=Decimal("0")),
             },
         )
 
@@ -71,10 +74,18 @@ class TestBacktester:
     def price_feed(self):
         # Create synthetic ticks from candles
         ticks = [
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("100.00"), timestamp=1000, source="replay"),
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("99.00"), timestamp=1001, source="replay"),
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("95.00"), timestamp=1002, source="replay"),
-            PriceTick(symbol=Symbol("USDTTMN"), price=Decimal("105.00"), timestamp=1003, source="replay"),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("100.00"), timestamp=1000, source="replay"
+            ),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("99.00"), timestamp=1001, source="replay"
+            ),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("95.00"), timestamp=1002, source="replay"
+            ),
+            PriceTick(
+                symbol=Symbol("USDTTMN"), price=Decimal("105.00"), timestamp=1003, source="replay"
+            ),
         ]
         return PriceFeedReplay(ticks)
 
@@ -91,28 +102,28 @@ class TestBacktester:
         result1 = backtester.run()
         result2 = backtester.run()
 
-        assert result1.realized_pnl == result2.realized_pnl
-        assert result1.total_return == result2.total_return
+        assert result1.metrics.realized_pnl == result2.metrics.realized_pnl
+        assert result1.metrics.total_return_pct == result2.metrics.total_return_pct
 
     def test_metrics_calculated(self, backtester):
         """Metrics calculated correctly."""
         result = backtester.run()
 
-        assert hasattr(result, 'realized_pnl')
-        assert hasattr(result, 'unrealized_pnl')
-        assert hasattr(result, 'total_return_pct')
-        assert hasattr(result, 'completed_cycles')
-        assert hasattr(result, 'avg_profit_per_cycle')
-        assert hasattr(result, 'max_drawdown')
-        assert hasattr(result, 'fees_paid')
-        assert hasattr(result, 'time_in_range')
+        assert hasattr(result.metrics, "realized_pnl")
+        assert hasattr(result.metrics, "unrealized_pnl")
+        assert hasattr(result.metrics, "total_return_pct")
+        assert hasattr(result.metrics, "completed_cycles")
+        assert hasattr(result.metrics, "avg_profit_per_cycle")
+        assert hasattr(result.metrics, "max_drawdown")
+        assert hasattr(result.metrics, "fees_paid")
+        assert hasattr(result.metrics, "time_in_range")
 
     def test_comparison_vs_buy_and_hold(self, backtester):
         """Comparison vs buy-and-hold."""
         result = backtester.run()
 
-        assert hasattr(result, 'buy_and_hold_return')
-        assert hasattr(result, 'outperformance')
+        assert hasattr(result.metrics, "buy_and_hold_return")
+        assert hasattr(result.metrics, "outperformance")
 
 
 class TestBacktestMetrics:

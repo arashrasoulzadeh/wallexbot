@@ -6,7 +6,7 @@ from typing import Optional
 from wallexbot.strategy.grid.interface import GridStrategy
 from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.wallex.price_feed import PriceFeed
-from wallexbot.tests.helpers.clock import Clock
+from wallexbot.domain import Clock
 
 
 @dataclass

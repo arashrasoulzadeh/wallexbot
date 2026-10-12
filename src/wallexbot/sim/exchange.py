@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional
 import uuid
+import time
 
 from wallexbot.sim.protocol import ExchangeProtocol
 from wallexbot.sim.matching import MatchingEngine, FillModel
@@ -13,7 +14,17 @@ from wallexbot.domain.order import OrderRequest, Order, Fill
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.money import quantize_down
-from wallexbot.tests.helpers.clock import Clock, RealClock
+from wallexbot.domain import Clock
+
+
+class _RealClock:
+    """Real system clock implementation."""
+
+    def now(self) -> float:
+        return time.time()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
 
 
 @dataclass
@@ -21,11 +32,14 @@ class SimulatedExchange:
     """In-memory simulated exchange with order matching."""
 
     market: Market
-    fee_schedule: FeeSchedule
-    min_notional_rule: MinNotionalRule
     initial_balances: dict[str, Balance]
-    clock: Clock = field(default_factory=RealClock)
+    fee_schedule_config: FeeSchedule = field(default=FeeSchedule(maker_rate=Decimal("0.001"), taker_rate=Decimal("0.001")))
+    min_notional_rule: MinNotionalRule = field(default=MinNotionalRule(min_notional=Decimal("10"), min_quantity=Decimal("0.0001")))
     fill_model: FillModel = FillModel.CONSERVATIVE
+    clock: Clock = field(default_factory=_RealClock)
+
+    # Internal fee schedule (set in __post_init__)
+    _fee_schedule: FeeSchedule = field(init=False, repr=False)
 
     # Internal state
     _balances: dict[str, Balance] = field(default_factory=dict, init=False)
@@ -40,10 +54,11 @@ class SimulatedExchange:
     _reject_next: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
+        self._fee_schedule = self.fee_schedule_config
         self._balances = self.initial_balances.copy()
         self._matching_engine = MatchingEngine(
             market=self.market,
-            fee_schedule=self.fee_schedule,
+            fee_schedule=self._fee_schedule,
             fill_model=self.fill_model,
         )
         self._rate_limiter = RateLimiter(
@@ -65,6 +80,8 @@ class SimulatedExchange:
         """Apply configured latency."""
         if self._latency > 0:
             self.clock.sleep(self._latency)
+            # For async contexts, use async_sleep
+            # This is a sync method so we use the sync sleep
 
     def _check_rate_limit(self) -> None:
         """Check rate limit, raise if exceeded."""
@@ -109,7 +126,7 @@ class SimulatedExchange:
             # Lock quote currency
             required = request.price * request.quantity if request.price else Decimal("0")
             # Add estimated fee
-            fee = self.fee_schedule.calculate_fee_quote(required, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_quote(required, is_maker=True)
             total = required + fee
             quote_asset = self.market.quote
             if quote_asset not in self._balances:
@@ -121,7 +138,7 @@ class SimulatedExchange:
             if base_asset not in self._balances:
                 self._balances[base_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
             # Add estimated fee in base
-            fee = self.fee_schedule.calculate_fee_base(request.quantity, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_base(request.quantity, is_maker=True)
             total = request.quantity + fee
             self._balances[base_asset] = self._balances[base_asset].lock(total)
 
@@ -130,13 +147,13 @@ class SimulatedExchange:
         if order.side == Side.BUY:
             quote_asset = self.market.quote
             locked_value = order.price * order.remaining_quantity
-            fee = self.fee_schedule.calculate_fee_quote(locked_value, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_quote(locked_value, is_maker=True)
             total = locked_value + fee
             self._balances[quote_asset] = self._balances[quote_asset].unlock(total)
         else:
             base_asset = self.market.base
             locked_qty = order.remaining_quantity
-            fee = self.fee_schedule.calculate_fee_base(locked_qty, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_base(locked_qty, is_maker=True)
             total = locked_qty + fee
             self._balances[base_asset] = self._balances[base_asset].unlock(total)
 
@@ -225,7 +242,7 @@ class SimulatedExchange:
 
     def fee_schedule(self) -> FeeSchedule:
         """Get fee schedule."""
-        return self.fee_schedule
+        return self._fee_schedule
 
     def market_info(self) -> Market:
         """Get market info."""
@@ -255,7 +272,7 @@ class SimulatedExchange:
             # Received base, paid quote (already locked)
             # Unlock remaining quote
             remaining_quote = order.price * order.remaining_quantity
-            fee = self.fee_schedule.calculate_fee_quote(remaining_quote, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_quote(remaining_quote, is_maker=True)
             total_locked = remaining_quote + fee
             self._balances[self.market.quote] = self._balances[self.market.quote].unlock(total_locked)
 
@@ -270,7 +287,7 @@ class SimulatedExchange:
             # Received quote, paid base (already locked)
             # Unlock remaining base
             remaining_base = order.remaining_quantity
-            fee = self.fee_schedule.calculate_fee_base(remaining_base, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_base(remaining_base, is_maker=True)
             total_locked = remaining_base + fee
             self._balances[self.market.base] = self._balances[self.market.base].unlock(total_locked)
 
@@ -288,7 +305,7 @@ class SimulatedExchange:
         # Similar to _lock_funds but for already-created order
         if order.side == Side.BUY:
             required = order.price * order.quantity
-            fee = self.fee_schedule.calculate_fee_quote(required, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_quote(required, is_maker=True)
             total = required + fee
             quote_asset = self.market.quote
             if quote_asset not in self._balances:
@@ -298,7 +315,7 @@ class SimulatedExchange:
             base_asset = self.market.base
             if base_asset not in self._balances:
                 self._balances[base_asset] = Balance(free=Decimal("0"), locked=Decimal("0"))
-            fee = self.fee_schedule.calculate_fee_base(order.quantity, is_maker=True)
+            fee = self._fee_schedule.calculate_fee_base(order.quantity, is_maker=True)
             total = order.quantity + fee
             self._balances[base_asset] = self._balances[base_asset].lock(total)
 

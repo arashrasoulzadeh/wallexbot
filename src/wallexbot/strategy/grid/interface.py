@@ -111,6 +111,10 @@ class GridStrategy:
         # Initialize state
         self.state = GridState(levels=levels)
 
+        # Populate active orders from initial placement
+        for order in placement.orders:
+            self.state.active_orders[order.level_index] = order.client_id
+
         # Convert placement orders to actions
         actions: list[Action] = []
         for order in placement.orders:
@@ -206,6 +210,8 @@ class GridStrategy:
                     client_id=action.client_id,
                     level_index=action.level_index,
                 ))
+                # Clear the cancelled order from state
+                self.state.clear_active_order(action.level_index)
 
         # Track cycle completion
         if result.cycle_completed:

@@ -1,12 +1,10 @@
 """Tests for grid strategy parameters and level generation."""
 
 from decimal import Decimal
-import pytest
-from hypothesis import given, strategies as st, assume
 
-from wallexbot.strategy.grid.parameters import GridParameters, GridMode
-from wallexbot.strategy.grid.levels import generate_levels, Level
-from wallexbot.domain.market import Market, Symbol
+import pytest
+
+from wallexbot.strategy.grid.parameters import GridMode, GridParameters, Level, generate_levels
 
 
 class TestGridParameters:
@@ -183,12 +181,12 @@ class TestGenerateLevelsArithmetic:
             price_precision=2,
         )
         # 100.00, 100.02, 100.05, 100.07, 100.10 - all distinct
-        prices = [l.price for l in levels]
+        prices = [level.price for level in levels]
         assert len(prices) == len(set(prices))
 
     def test_arithmetic_rounding_collapse_raises(self):
         # Very tight range with many levels and low precision -> collapse
-        with pytest.raises(ValueError, match="rounding collapse"):
+        with pytest.raises(ValueError, match="collapsed after rounding"):
             generate_levels(
                 lower=Decimal("100.00"),
                 upper=Decimal("100.01"),
@@ -266,11 +264,11 @@ class TestGenerateLevelsGeometric:
             mode=GridMode.GEOMETRIC,
             price_precision=2,
         )
-        prices = [l.price for l in levels]
+        prices = [level.price for level in levels]
         assert len(prices) == len(set(prices))
 
     def test_geometric_rounding_collapse_raises(self):
-        with pytest.raises(ValueError, match="rounding collapse"):
+        with pytest.raises(ValueError, match="collapsed after rounding"):
             generate_levels(
                 lower=Decimal("100.00"),
                 upper=Decimal("100.01"),
@@ -284,14 +282,14 @@ class TestLevel:
     """Tests for Level dataclass."""
 
     def test_level_creation(self):
-        from wallexbot.strategy.grid.levels import Level
         level = Level(index=0, price=Decimal("100.00"), side="buy")
         assert level.index == 0
         assert level.price == Decimal("100.00")
         assert level.side == "buy"
 
     def test_level_side_assignment(self):
-        from wallexbot.strategy.grid.levels import Level, assign_sides
+        from wallexbot.strategy.grid.parameters import assign_sides
+
         levels = [
             Level(index=0, price=Decimal("90.00"), side=""),
             Level(index=1, price=Decimal("95.00"), side=""),

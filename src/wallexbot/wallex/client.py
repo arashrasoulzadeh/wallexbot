@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional, Protocol
 import httpx
+import time
 
 from wallexbot.wallex.models import Market, Depth, Trade, Candle, OrderBookLevel
 from wallexbot.domain.market import Symbol
 from wallexbot.domain.money import parse_wire_string
-from wallexbot.tests.helpers.clock import Clock, RealClock
+from wallexbot.domain import Clock
 
 
 class Transport(Protocol):
@@ -28,7 +29,7 @@ class WallexRestClient:
 
     def __post_init__(self) -> None:
         if self.clock is None:
-            self.clock = RealClock()
+            self.clock = _RealClock()
 
     def _get_client(self) -> httpx.Client:
         """Get or create HTTP client."""
@@ -167,3 +168,13 @@ class WallexRestClient:
         if self._client is not None:
             self._client.close()
             self._client = None
+
+
+class _RealClock:
+    """Real system clock implementation."""
+
+    def now(self) -> float:
+        return time.time()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)

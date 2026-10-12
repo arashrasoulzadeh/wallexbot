@@ -20,6 +20,9 @@ class Repository(ABC):
     def get_run(self, run_id: str) -> Optional[dict]: ...
 
     @abstractmethod
+    def list_runs(self) -> list[dict]: ...
+
+    @abstractmethod
     def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None: ...
 
     @abstractmethod
@@ -85,6 +88,9 @@ class InMemoryRepository(Repository):
 
     def get_run(self, run_id: str) -> Optional[dict]:
         return self._runs.get(run_id)
+
+    def list_runs(self) -> list[dict]:
+        return list(self._runs.values())
 
     def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None:
         if run_id in self._runs:
@@ -204,6 +210,11 @@ class SQLiteRepository(Repository):
         if row:
             return dict(row)
         return None
+
+    def list_runs(self) -> list[dict]:
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT * FROM runs ORDER BY started_at DESC")
+        return [dict(row) for row in cursor.fetchall()]
 
     def update_run_status(self, run_id: str, status: str, stopped_at: int = None) -> None:
         with self._transaction() as cursor:

@@ -1,20 +1,15 @@
 """Tests for persistence and recovery."""
 
-from decimal import Decimal
-import pytest
+import os
 import sqlite3
 import tempfile
-import os
 
+import pytest
+
+from wallexbot.storage.migrations import run_migrations
 from wallexbot.storage.repository import (
-    SQLiteRepository,
     InMemoryRepository,
-    Repository,
 )
-from wallexbot.storage.migrations import run_migrations, MIGRATIONS
-from wallexbot.domain.market import Symbol, Side, OrderType, OrderStatus
-from wallexbot.domain.order import Order, Fill
-from wallexbot.strategy.grid.parameters import Level
 
 
 class TestMigrations:
@@ -22,7 +17,7 @@ class TestMigrations:
 
     def test_migrate_from_empty(self):
         """Migrate from empty database."""
-        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
 
         try:
@@ -37,7 +32,7 @@ class TestMigrations:
             tables = {row[0] for row in cursor.fetchall()}
             conn.close()
 
-            expected = {'runs', 'orders', 'fills', 'grid_state', 'events'}
+            expected = {"runs", "orders", "fills", "grid_state", "events"}
             assert expected.issubset(tables)
         finally:
             os.unlink(db_path)
@@ -62,44 +57,53 @@ class TestRepository:
 
         run = repo.get_run(run_id)
         assert run is not None
-        assert run['config']['grid_count'] == 10
+        assert run["config"]["grid_count"] == 10
 
     def test_save_order(self, repo):
         """Save order."""
         run_id = repo.create_run("test", {})
-        order_id = repo.save_order(run_id, {
-            'id': 'ord_1',
-            'client_id': 'GRID_1',
-            'symbol': 'USDTTMN',
-            'side': 'BUY',
-            'price': '100.00',
-            'quantity': '10.0000',
-        })
+        order_id = repo.save_order(
+            run_id,
+            {
+                "id": "ord_1",
+                "client_id": "GRID_1",
+                "symbol": "USDTTMN",
+                "side": "BUY",
+                "price": "100.00",
+                "quantity": "10.0000",
+            },
+        )
         assert order_id is not None
 
     def test_save_fill(self, repo):
         """Save fill."""
         run_id = repo.create_run("test", {})
-        fill_id = repo.save_fill(run_id, {
-            'order_id': 'ord_1',
-            'price': '100.00',
-            'quantity': '10.0000',
-            'fee': '0.10',
-        })
+        fill_id = repo.save_fill(
+            run_id,
+            {
+                "order_id": "ord_1",
+                "price": "100.00",
+                "quantity": "10.0000",
+                "fee": "0.10",
+            },
+        )
         assert fill_id is not None
 
     def test_save_grid_state(self, repo):
         """Save grid state."""
         run_id = repo.create_run("test", {})
-        repo.save_grid_state(run_id, {
-            'levels': [
-                {'index': 0, 'price': '90.00', 'side': 'buy', 'active_order_id': 'ord_1'},
-                {'index': 1, 'price': '95.00', 'side': 'buy', 'active_order_id': None},
-            ]
-        })
+        repo.save_grid_state(
+            run_id,
+            {
+                "levels": [
+                    {"index": 0, "price": "90.00", "side": "buy", "active_order_id": "ord_1"},
+                    {"index": 1, "price": "95.00", "side": "buy", "active_order_id": None},
+                ]
+            },
+        )
 
         state = repo.get_grid_state(run_id)
-        assert len(state['levels']) == 2
+        assert len(state["levels"]) == 2
 
 
 class TestRestartRecovery:

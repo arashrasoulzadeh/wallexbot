@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from wallexbot.tests.helpers.clock import Clock
+from wallexbot.domain import Clock
 
 
 class RateLimiter:

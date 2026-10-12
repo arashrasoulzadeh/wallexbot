@@ -107,7 +107,7 @@ Go / no-go gates:
 
 Docs: [docs/wallex-api.md](docs/wallex-api.md) section 1 (general), section 9 (bot notes).
 
-- [ ] 1.1 Decide Python version: **3.12+** (record in `pyproject.toml` `requires-python`)
+- [ ] 1.1 Python version: floor **3.12+**, developed on the installed 3.14.7 (record in `pyproject.toml` `requires-python`)
 - [ ] 1.2 `git init` check, `.gitignore` (venv, `__pycache__`, `.env`, `*.db`, `.coverage`, `reports/`, `data/`)
 - [ ] 1.3 Create layout:
   - [ ] `src/wallexbot/` (package, `__init__.py`, `py.typed`)
@@ -116,8 +116,8 @@ Docs: [docs/wallex-api.md](docs/wallex-api.md) section 1 (general), section 9 (b
 - [ ] 1.4 `pyproject.toml` with project metadata, `src` layout, console script `wallexbot`
 - [ ] 1.5 Dev dependencies pinned: `pytest`, `pytest-cov`, `pytest-asyncio`, `hypothesis`, `ruff`, `mypy`, `freezegun` (or own fake clock)
 - [ ] 1.6 Runtime dependencies (keep minimal): `pydantic` (config validation), `PyYAML`, `httpx`, `websockets`
-  - [ ] 1.6a Verify package index is reachable; if not, document the offline-install fallback (vendored wheels or stdlib-only shims)
-- [ ] 1.7 Virtualenv instructions in `README.md` (`python3 -m venv .venv`, install, run tests)
+  - [x] 1.6a Package index reachability verified (D6); keep a `requirements.lock` so installs are reproducible
+- [ ] 1.7 Virtualenv instructions in `README.md` (`python3 -m venv .venv`, install, run tests); `.venv` already created at the project root and must be gitignored
 - [ ] 1.8 `pytest` config: strict markers, `-ra`, `--strict-config`, default deselect marker `live_public`
 - [ ] 1.9 `ruff` config (lint + format), `mypy --strict` config
 - [ ] 1.10 Coverage config: branch coverage, fail-under 90% (core packages 100% target)
@@ -599,6 +599,14 @@ Resolved (2026-10-10):
 - [x] D15 Time display: **Asia/Tehran, Gregorian dates**; UTC stored everywhere; Jalali is a UI toggle.
 - [x] D10 Extras to include: Telegram alerts, Docker setup (packaging only), pluggable strategies.
 
+- [x] D6 Dependencies: **package install works** (checked 2026-10-12: `pytest`, `httpx`, `websockets`, `pyyaml`, `fastapi` installed into a project `.venv`; `pydantic` 2.x already on the system Python). Use the full stack from the Tech stack table; no stdlib-only fallback needed. Local Python is **3.14.7** (project floor stays 3.12+; test on the installed version). Node is NOT needed (HTMX decision).
+- [x] D11 USDTTMN facts from public `GET /hector/web/v1/markets` and `/v1/depth` (2026-10-12):
+  - `price_precision = 0` (prices are whole Toman), `amount_precision = 2` (USDT to 2 decimals), price about 264,000 TMN.
+  - 24h high/low 265,871 / 263,190 = about **1.0% daily range**; top-of-book spread 59 TMN = **0.022%**; order book is deep (thousands of USDT near the top).
+  - **Spot minimum order size is NOT published** anywhere in the docs or market data (only OTC `otc_min_notional = 90,000 TMN`). Plan: use 90,000 TMN as a conservative placeholder minimum, make it configurable, and confirm with Wallex support (api@wallex.ir / @wallexapi).
+  - 2M TMN is about 7.5 USDT: 10 levels at about 200,000 TMN each is above the placeholder minimum, so a small grid is feasible.
+  - **Key risk found:** a grid level spacing of about 0.1% only profits if round-trip fees are below that. The Wallex fee rate is only visible via the authenticated `/v1/account/fee` endpoint, so it is unknown without a key. Until known, the sim treats fees as a config value and the config validator (4.3) must refuse grids whose spacing is under 2x the maker fee plus margin.
+
 Still open:
-- [ ] D6 (Phase 1): `pydantic` + `httpx` + `websockets` vs stdlib-only, depends on package index access (PyPI was unreachable earlier; re-check at Phase 1.6a).
-- [ ] D11 (Phase 3): with 2M TMN, check that min order size allows a useful grid count on USDTTMN; Wallex min order size is unpublished, so verify empirically from public market data or support.
+- [ ] D16 (Phase 4): actual Wallex maker/taker fee for USDTTMN. Without API keys, find it from Wallex's public fee-schedule page or support; until then run backtests across a fee range (for example 0.05% to 0.35%) and report break-even spacing.
+- [ ] D17 (Phase 3/5): real spot minimum order size/notional; confirm with Wallex support, keep 90,000 TMN placeholder meanwhile.

@@ -10,7 +10,7 @@ from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.wallex.price_feed import PriceFeed, PriceFeedReplay, PriceTick
 from wallexbot.domain.market import Symbol
 from wallexbot.domain.fees import FeeSchedule
-from wallexbot.tests.helpers.clock import FakeClock
+from wallexbot.domain import Clock
 
 
 @dataclass
@@ -42,6 +42,22 @@ class BacktestResult:
     end_time: int
 
 
+class _BacktestClock:
+    """Simple clock for backtesting."""
+
+    def __init__(self) -> None:
+        self._time = 0.0
+
+    def now(self) -> float:
+        return self._time
+
+    def sleep(self, seconds: float) -> None:
+        self._time += seconds
+
+    def set_time(self, timestamp: float) -> None:
+        self._time = timestamp
+
+
 class Backtester:
     """Runs backtests on historical data."""
 
@@ -54,7 +70,7 @@ class Backtester:
         self.strategy = strategy
         self.exchange = exchange
         self.price_feed = price_feed
-        self._clock = FakeClock()
+        self._clock = _BacktestClock()
         self._initial_equity: Optional[Decimal] = None
         self._peak_equity: Optional[Decimal] = None
         self._in_range_time = 0

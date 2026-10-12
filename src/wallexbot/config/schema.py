@@ -42,7 +42,7 @@ class MarketConfig(BaseModel):
     @field_validator("symbol")
     @classmethod
     def validate_symbol(cls, v: str) -> str:
-        return Symbol(v).value
+        return str(Symbol(v))
 
 
 class GridStrategyConfig(BaseModel):

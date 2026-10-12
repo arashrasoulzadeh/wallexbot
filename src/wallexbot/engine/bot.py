@@ -11,7 +11,7 @@ from wallexbot.engine.actions import ActionExecutor
 from wallexbot.strategy.grid.interface import GridStrategy, Action
 from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.wallex.price_feed import PriceFeed, PriceTick
-from wallexbot.tests.helpers.clock import Clock
+from wallexbot.domain import Clock
 
 
 @dataclass

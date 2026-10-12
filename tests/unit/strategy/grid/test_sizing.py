@@ -1,29 +1,30 @@
 """Tests for order sizing and initial placement."""
 
 from decimal import Decimal
-import pytest
 
-from wallexbot.strategy.grid.sizing import (
-    calculate_equal_quote_qty,
-    calculate_equal_base_qty,
-    validate_order_sizes,
-    compute_initial_inventory,
-)
-from wallexbot.strategy.grid.parameters import GridParameters, GridMode, Level, assign_sides, generate_levels
-from wallexbot.domain.market import Market, Symbol
 from wallexbot.domain.fees import MinNotionalRule
+from wallexbot.domain.market import Market, Side, Symbol
+from wallexbot.strategy.grid.parameters import (
+    Level,
+)
+from wallexbot.strategy.grid.sizing import (
+    calculate_equal_base_qty,
+    calculate_equal_quote_qty,
+    compute_initial_inventory,
+    validate_order_sizes,
+)
 
 
 class TestEqualQuoteSizing:
     """Tests for equal-quote-per-grid sizing."""
 
     def test_equal_quote_per_grid(self):
-        # 10,000 TMN total, 10 grids -> 1,000 TMN per grid
-        # At price 100, qty = 1000/100 = 10 USDT
+        # 10,000 TMN total, 5 levels with one skipped -> 4 active levels
+        # 10000/4 = 2500 per level
         levels = [
             Level(index=0, price=Decimal("90.00"), side="buy"),
             Level(index=1, price=Decimal("95.00"), side="buy"),
-            Level(index=2, price=Decimal("100.00"), side="buy"),
+            Level(index=2, price=Decimal("100.00"), side=""),  # skipped at current price
             Level(index=3, price=Decimal("105.00"), side="sell"),
             Level(index=4, price=Decimal("110.00"), side="sell"),
         ]
@@ -40,9 +41,6 @@ class TestEqualQuoteSizing:
             total_quote=Decimal("10000.00"),
             market=market,
         )
-        # Buy levels (below 100): 90, 95 -> 2 levels
-        # Sell levels (above 100): 105, 110 -> 2 levels
-        # Level at 100 skipped
         # 4 active levels, 10000/4 = 2500 per level
         # Buy at 90: 2500/90 = 27.777... -> 27.7777 (rounded down to 4 decimals)
         # Buy at 95: 2500/95 = 26.315... -> 26.3157
@@ -50,6 +48,7 @@ class TestEqualQuoteSizing:
         # Sell at 110: 2500/110 = 22.727... -> 22.7272
         assert qtys[0] == Decimal("27.7777")  # 2500/90
         assert qtys[1] == Decimal("26.3157")  # 2500/95
+        assert qtys[2] == Decimal("0")  # skipped level
         assert qtys[3] == Decimal("23.8095")  # 2500/105
         assert qtys[4] == Decimal("22.7272")  # 2500/110
 
@@ -179,7 +178,13 @@ class TestComputeInitialInventory:
             Level(index=3, price=Decimal("105.00"), side="sell"),
             Level(index=4, price=Decimal("110.00"), side="sell"),
         ]
-        qtys = [Decimal("10.0000"), Decimal("10.0000"), Decimal("0"), Decimal("10.0000"), Decimal("10.0000")]
+        qtys = [
+            Decimal("10.0000"),
+            Decimal("10.0000"),
+            Decimal("0"),
+            Decimal("10.0000"),
+            Decimal("10.0000"),
+        ]
         # 2 sell levels * 10 USDT each = 20 USDT needed
         needed = compute_initial_inventory(levels, qtys, Side.SELL)
         assert needed == Decimal("20.0000")
@@ -191,6 +196,7 @@ class TestComputeInitialInventory:
             Level(index=1, price=Decimal("95.00"), side="buy"),
         ]
         qtys = [Decimal("10.0000"), Decimal("10.0000")]
-        # Buy orders lock quote, not base
+        # Buy orders lock quote value = price * qty
         needed = compute_initial_inventory(levels, qtys, Side.BUY)
-        assert needed == Decimal("0")  # No base needed for buys
+        # 90*10 + 95*10 = 900 + 950 = 1850
+        assert needed == Decimal("1850.0000")

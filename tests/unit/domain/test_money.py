@@ -1,9 +1,10 @@
 """Tests for money math helpers."""
 
 from decimal import Decimal
+
 import pytest
 
-from wallexbot.domain.money import quantize_down, quantize_to_precision, parse_wire_string
+from wallexbot.domain.money import parse_wire_string, quantize_down, quantize_to_precision
 
 
 class TestQuantizeDown:
@@ -108,7 +109,8 @@ class TestPropertyQuantize:
     """Property-based tests for quantize functions."""
 
     def test_quantize_down_property_idempotent(self):
-        from hypothesis import given, strategies as st
+        from hypothesis import given
+        from hypothesis import strategies as st
 
         @given(
             st.decimals(min_value=-1000, max_value=1000, places=10),
@@ -122,7 +124,8 @@ class TestPropertyQuantize:
         test_impl()
 
     def test_quantize_to_precision_property_idempotent(self):
-        from hypothesis import given, strategies as st
+        from hypothesis import given
+        from hypothesis import strategies as st
 
         @given(
             st.decimals(min_value=-1000, max_value=1000, places=10),

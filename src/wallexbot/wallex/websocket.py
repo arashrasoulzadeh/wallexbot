@@ -5,11 +5,12 @@ from decimal import Decimal
 from typing import Optional, Callable, AsyncGenerator
 import json
 import asyncio
+import time
 
 from wallexbot.wallex.models import Depth, Trade, OrderBookLevel
 from wallexbot.domain.market import Symbol
 from wallexbot.domain.money import parse_wire_string
-from wallexbot.tests.helpers.clock import Clock, RealClock
+from wallexbot.domain import Clock
 
 
 @dataclass
@@ -22,7 +23,7 @@ class WallexWebSocketClient:
 
     def __post_init__(self) -> None:
         if self.clock is None:
-            self.clock = RealClock()
+            self.clock = _RealClock()
         self._connection = None
         self._running = False
 
@@ -177,3 +178,13 @@ class WallexWebSocketClient:
                 # Log error and reconnect with backoff
                 await asyncio.sleep(5)  # Simple backoff
                 continue
+
+
+class _RealClock:
+    """Real system clock implementation."""
+
+    def now(self) -> float:
+        return time.time()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)

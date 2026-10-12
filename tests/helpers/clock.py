@@ -1,9 +1,11 @@
 """Fake clock utility for deterministic testing."""
 
 from __future__ import annotations
+
+import asyncio
 import time
-from typing import Protocol
 from dataclasses import dataclass, field
+from typing import Protocol
 
 
 class Clock(Protocol):
@@ -16,12 +18,16 @@ class Clock(Protocol):
 @dataclass
 class FakeClock:
     """Deterministic fake clock for testing."""
+
     _time: float = field(default_factory=time.time)
 
     def now(self) -> float:
         return self._time
 
     def sleep(self, seconds: float) -> None:
+        self._time += seconds
+
+    async def async_sleep(self, seconds: float) -> None:
         self._time += seconds
 
     def advance(self, seconds: float) -> None:
@@ -42,3 +48,6 @@ class RealClock:
 
     def sleep(self, seconds: float) -> None:
         time.sleep(seconds)
+
+    async def async_sleep(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)

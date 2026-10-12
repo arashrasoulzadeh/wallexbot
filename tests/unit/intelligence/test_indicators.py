@@ -1,38 +1,28 @@
 """Tests for intelligence module."""
 
 from decimal import Decimal
-import pytest
-from hypothesis import given, strategies as st
 
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from wallexbot.domain.market import Symbol
 from wallexbot.intelligence.indicators import (
-    calculate_atr,
-    calculate_std_returns,
     calculate_adx,
-    detect_regime,
+    calculate_atr,
     calculate_donchian,
     calculate_percentile_in_range,
+    calculate_std_returns,
     check_liquidity,
+    detect_regime,
 )
 from wallexbot.intelligence.smart_grid import (
+    should_run_grid,
+    suggest_capital_allocation,
     suggest_range,
     suggest_spacing,
-    suggest_capital_allocation,
-    should_run_grid,
-)
-from wallexbot.intelligence.adaptive import (
-    recenter_grid,
-    dynamic_spacing,
-    trend_guard,
-    anomaly_guard,
-)
-from wallexbot.intelligence.optimizer import (
-    grid_search_optimizer,
-    random_search_optimizer,
-    walk_forward_validation,
-    monte_carlo_simulation,
 )
 from wallexbot.wallex.models import Candle
-from wallexbot.domain.market import Symbol
 
 
 class TestIndicators:
@@ -47,16 +37,18 @@ class TestIndicators:
             # Simple random walk
             change = Decimal(str((i % 7 - 3) * 0.5))
             close = base_price + change
-            candles.append(Candle(
-                symbol=Symbol("USDTTMN"),
-                resolution="60",
-                open_time=1000 + i * 3600,
-                open=base_price,
-                high=max(base_price, close) + Decimal("0.5"),
-                low=min(base_price, close) - Decimal("0.5"),
-                close=close,
-                volume=Decimal("1000.0000"),
-            ))
+            candles.append(
+                Candle(
+                    symbol=Symbol("USDTTMN"),
+                    resolution="60",
+                    open_time=1000 + i * 3600,
+                    open=base_price,
+                    high=max(base_price, close) + Decimal("0.5"),
+                    low=min(base_price, close) - Decimal("0.5"),
+                    close=close,
+                    volume=Decimal("1000.0000"),
+                )
+            )
             base_price = close
         return candles
 
@@ -109,29 +101,33 @@ class TestSmartGrid:
         for i in range(100):
             change = Decimal(str((i % 10 - 5) * 0.2))
             close = base + change
-            candles.append(Candle(
-                symbol=Symbol("USDTTMN"),
-                resolution="60",
-                open_time=1000 + i * 3600,
-                open=base,
-                high=max(base, close) + Decimal("0.2"),
-                low=min(base, close) - Decimal("0.2"),
-                close=close,
-                volume=Decimal("1000.0000"),
-            ))
+            candles.append(
+                Candle(
+                    symbol=Symbol("USDTTMN"),
+                    resolution="60",
+                    open_time=1000 + i * 3600,
+                    open=base,
+                    high=max(base, close) + Decimal("0.2"),
+                    low=min(base, close) - Decimal("0.2"),
+                    close=close,
+                    volume=Decimal("1000.0000"),
+                )
+            )
             base = close
         return candles
 
     def test_suggest_range(self, sample_candles):
         """Auto range suggestion from volatility bands."""
-        lower, upper = suggest_range(sample_candles, capital=Decimal("2000000"))
-        assert lower < upper
-        assert lower > Decimal("0")
+        suggestion = suggest_range(sample_candles, capital=Decimal("2000000"))
+        assert suggestion.lower < suggestion.upper
+        assert suggestion.lower > Decimal("0")
 
     def test_suggest_spacing(self, sample_candles):
         """Auto spacing suggestion."""
-        spacing = suggest_spacing(sample_candles, capital=Decimal("2000000"), fee_rate=Decimal("0.001"))
-        assert spacing > Decimal("0")
+        suggestion = suggest_spacing(
+            sample_candles, capital=Decimal("2000000"), fee_rate=Decimal("0.001")
+        )
+        assert suggestion.spacing > Decimal("0")
 
     def test_capital_allocation(self, sample_candles):
         """Capital allocator splits across levels."""
@@ -142,15 +138,15 @@ class TestSmartGrid:
             upper=Decimal("105.00"),
             grid_count=10,
         )
-        assert sum(allocation) <= Decimal("2000000")
-        assert len(allocation) == 10
+        assert sum(allocation.allocations) <= Decimal("2000000")
+        assert len(allocation.allocations) == 10
 
     def test_should_run_grid(self, sample_candles):
         """Should I run grid now?"""
         decision = should_run_grid(sample_candles, capital=Decimal("2000000"))
-        assert "should_run" in decision
-        assert "reason" in decision
-        assert "regime" in decision
+        assert hasattr(decision, "should_run")
+        assert hasattr(decision, "reason")
+        assert hasattr(decision, "regime")
 
 
 class TestAdaptive:
@@ -201,16 +197,18 @@ class TestProperties:
         """ATR is always positive."""
         candles = []
         for i, p in enumerate(prices):
-            candles.append(Candle(
-                symbol=Symbol("USDTTMN"),
-                resolution="60",
-                open_time=i * 3600,
-                open=p,
-                high=p + Decimal("1"),
-                low=p - Decimal("1"),
-                close=p,
-                volume=Decimal("1000"),
-            ))
+            candles.append(
+                Candle(
+                    symbol=Symbol("USDTTMN"),
+                    resolution="60",
+                    open_time=i * 3600,
+                    open=p,
+                    high=p + Decimal("1"),
+                    low=p - Decimal("1"),
+                    close=p,
+                    volume=Decimal("1000"),
+                )
+            )
         atr = calculate_atr(candles, period=14)
         assert atr >= Decimal("0")
 
@@ -219,15 +217,17 @@ class TestProperties:
         """ADX is bounded 0-100."""
         candles = []
         for i, p in enumerate(prices):
-            candles.append(Candle(
-                symbol=Symbol("USDTTMN"),
-                resolution="60",
-                open_time=i * 3600,
-                open=p,
-                high=p + Decimal("1"),
-                low=p - Decimal("1"),
-                close=p,
-                volume=Decimal("1000"),
-            ))
+            candles.append(
+                Candle(
+                    symbol=Symbol("USDTTMN"),
+                    resolution="60",
+                    open_time=i * 3600,
+                    open=p,
+                    high=p + Decimal("1"),
+                    low=p - Decimal("1"),
+                    close=p,
+                    volume=Decimal("1000"),
+                )
+            )
         adx = calculate_adx(candles, period=14)
         assert Decimal("0") <= adx <= Decimal("100")

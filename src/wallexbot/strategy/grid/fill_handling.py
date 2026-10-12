@@ -60,10 +60,11 @@ def handle_fill(
     """
     Handle a fill event and return counter-actions.
 
-    Grid logic:
-    - Buy fill at level i -> place sell at level i+1
-    - Sell fill at level i -> place buy at level i-1
-    - Edge levels (top/bottom): no counter-order, cycle completed
+    Grid logic (gap-based):
+    - Find the gap level (side == "")
+    - Buy fill at level immediately below gap -> place sell at first sell level above gap
+    - Sell fill at level immediately above gap -> place buy at first buy level below gap
+    - Other fills: no counter-order (cycle completed at boundaries)
     - Partial fills: counter-order for filled quantity only
     """
     # Check if this fill level has an active order
@@ -75,22 +76,36 @@ def handle_fill(
     level = levels[fill_level]
     filled_side = level.side  # "buy" or "sell"
 
+    # Find the gap level (side == "")
+    gap_level_idx = None
+    for idx, lvl in enumerate(levels):
+        if lvl.side == "":
+            gap_level_idx = idx
+            break
+
     actions: list[Action] = []
     cycle_completed = False
     profit = Decimal("0")
 
     if filled_side == "buy":
-        # Buy filled -> place sell at next level up (i+1)
-        next_level_idx = fill_level + 1
-        if next_level_idx >= len(levels):
-            # Top of grid - no counter order, cycle completed
-            cycle_completed = True
-        elif levels[next_level_idx].side == "":
-            # Next level is skipped (at price) - find next valid
-            next_valid = next((i for i in range(next_level_idx, len(levels)) if levels[i].side == "sell"), None)
-            if next_valid is not None:
+        # Buy filled -> place sell at first sell level above gap
+        # Only if this buy level is immediately below the gap
+        if gap_level_idx is not None and fill_level + 1 == gap_level_idx:
+            # Find first sell level above gap
+            next_level_idx = gap_level_idx + 1
+            while next_level_idx < len(levels) and levels[next_level_idx].side != "sell":
+                next_level_idx += 1
+            if next_level_idx < len(levels):
+                # If there's an existing order at the counter level, cancel it first
+                if next_level_idx in active_orders:
+                    actions.append(CancelAction(
+                        type="cancel",
+                        client_id=active_orders[next_level_idx],
+                        level_index=next_level_idx,
+                    ))
+                # Place counter order at next valid level
                 actions.append(_create_counter_order(
-                    level_idx=next_valid,
+                    level_idx=next_level_idx,
                     side=Side.SELL,
                     quantity=fill_qty,
                     levels=levels,
@@ -98,29 +113,31 @@ def handle_fill(
                     fee_schedule=fee_schedule,
                     min_notional_rule=min_notional_rule,
                 ))
+            else:
+                cycle_completed = True
         else:
-            actions.append(_create_counter_order(
-                level_idx=next_level_idx,
-                side=Side.SELL,
-                quantity=fill_qty,
-                levels=levels,
-                market=market,
-                fee_schedule=fee_schedule,
-                min_notional_rule=min_notional_rule,
-            ))
+            # Not adjacent to gap - no counter order (boundary)
+            cycle_completed = True
 
     elif filled_side == "sell":
-        # Sell filled -> place buy at next level down (i-1)
-        prev_level_idx = fill_level - 1
-        if prev_level_idx < 0:
-            # Bottom of grid - no counter order, cycle completed
-            cycle_completed = True
-        elif levels[prev_level_idx].side == "":
-            # Prev level is skipped - find prev valid
-            prev_valid = next((i for i in range(prev_level_idx, -1, -1) if levels[i].side == "buy"), None)
-            if prev_valid is not None:
+        # Sell filled -> place buy at first buy level below gap
+        # Only if this sell level is immediately above the gap
+        if gap_level_idx is not None and fill_level - 1 == gap_level_idx:
+            # Find first buy level below gap
+            prev_level_idx = gap_level_idx - 1
+            while prev_level_idx >= 0 and levels[prev_level_idx].side != "buy":
+                prev_level_idx -= 1
+            if prev_level_idx >= 0:
+                # If there's an existing order at the counter level, cancel it first
+                if prev_level_idx in active_orders:
+                    actions.append(CancelAction(
+                        type="cancel",
+                        client_id=active_orders[prev_level_idx],
+                        level_index=prev_level_idx,
+                    ))
+                # Place counter order at prev valid level
                 actions.append(_create_counter_order(
-                    level_idx=prev_valid,
+                    level_idx=prev_level_idx,
                     side=Side.BUY,
                     quantity=fill_qty,
                     levels=levels,
@@ -128,16 +145,11 @@ def handle_fill(
                     fee_schedule=fee_schedule,
                     min_notional_rule=min_notional_rule,
                 ))
+            else:
+                cycle_completed = True
         else:
-            actions.append(_create_counter_order(
-                level_idx=prev_level_idx,
-                side=Side.BUY,
-                quantity=fill_qty,
-                levels=levels,
-                market=market,
-                fee_schedule=fee_schedule,
-                min_notional_rule=min_notional_rule,
-            ))
+            # Not adjacent to gap - no counter order (boundary)
+            cycle_completed = True
 
     return FillResult(actions=actions, cycle_completed=cycle_completed, profit=profit)
 

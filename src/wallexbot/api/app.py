@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from wallexbot.storage.repository import Repository, InMemoryRepository
 from wallexbot.config.schema import validate_config, Config
@@ -137,17 +137,17 @@ def create_app(
     # Runs
     @app.get("/api/runs")
     async def list_runs():
-        # In a real implementation, this would query the repo
-        # For now, return mock data for UI testing
+        runs = repo.list_runs()
         return [
             {
-                "id": "run_123",
-                "status": "completed",
-                "market": "USDTTMN",
-                "mode": "arithmetic",
-                "started_at": 1705238400000,
-                "stopped_at": 1705324800000,
+                "id": r["id"],
+                "status": r.get("status", "unknown"),
+                "market": r.get("config", {}).get("market", {}).get("symbol", "unknown"),
+                "mode": r.get("config", {}).get("strategy", {}).get("grid", {}).get("mode", "unknown"),
+                "started_at": r.get("created_at", 0),
+                "stopped_at": r.get("stopped_at", 0),
             }
+            for r in runs
         ]
 
     @app.get("/api/runs/{run_id}")
@@ -215,8 +215,12 @@ def create_app(
 
     @app.post("/api/backtests")
     async def start_backtest(request: BacktestRequest):
+        try:
+            config = validate_config(request.config)
+        except ValidationError as e:
+            raise HTTPException(422, detail=e.errors())
         run_id = await engine_manager.start_backtest(
-            validate_config(request.config),
+            config,
             request.from_ts,
             request.to_ts,
         )
@@ -228,7 +232,11 @@ def create_app(
 
     @app.post("/api/paper-runs")
     async def start_paper_run(request: PaperRunRequest):
-        run_id = await engine_manager.start_paper_run(validate_config(request.config))
+        try:
+            config = validate_config(request.config)
+        except ValidationError as e:
+            raise HTTPException(422, detail=e.errors())
+        run_id = await engine_manager.start_paper_run(config)
         return {"id": run_id}
 
     @app.post("/api/runs/{run_id}/pause")

@@ -1,18 +1,12 @@
 """Tests for configuration system."""
 
 from decimal import Decimal
+
 import pytest
 import yaml
 
 from wallexbot.config.schema import (
     Config,
-    ExchangeConfig,
-    MarketConfig,
-    GridStrategyConfig,
-    RiskConfig,
-    SimulationConfig,
-    LoggingConfig,
-    GridMode,
     load_config,
     validate_config,
 )
@@ -58,8 +52,8 @@ logging:
         validated = validate_config(config)
         assert isinstance(validated, Config)
         assert validated.market.symbol == Symbol("USDTTMN")
-        assert validated.strategy.grid.lower_price == Decimal("90.00")
-        assert validated.strategy.grid.grid_count == 10
+        assert validated.strategy["grid"].lower_price == "90.00"
+        assert validated.strategy["grid"].grid_count == 10
 
     def test_invalid_lower_ge_upper(self):
         """lower_price >= upper_price raises error."""
@@ -228,6 +222,7 @@ logging:
     def test_env_override_precedence(self):
         """CLI > env > file precedence."""
         import os
+
         os.environ["WALLEXBOT_STRATEGY_GRID_LOWER_PRICE"] = "95.00"
 
         yaml_str = """
@@ -252,7 +247,7 @@ logging:
         config = yaml.safe_load(yaml_str)
         # Env override should apply
         validated = validate_config(config, env_overrides=True)
-        assert validated.strategy.grid.lower_price == Decimal("95.00")
+        assert validated.strategy["grid"].lower_price == "95.00"
 
         del os.environ["WALLEXBOT_STRATEGY_GRID_LOWER_PRICE"]
 
@@ -289,10 +284,11 @@ logging:
         validated = validate_config(config)
 
         # Check derived values
-        assert hasattr(validated.strategy.grid, 'spacing')
-        assert hasattr(validated.strategy.grid, 'levels_count')
-        assert hasattr(validated.strategy.grid, 'per_grid_investment')
-        assert hasattr(validated.strategy.grid, 'min_profit_per_cycle_after_fees')
+        grid = validated.strategy["grid"]
+        assert hasattr(grid, "spacing")
+        assert hasattr(grid, "levels_count")
+        assert hasattr(grid, "per_grid_investment")
+        assert hasattr(grid, "min_profit_per_cycle_after_fees")
 
     def test_derived_spacing_calculation(self):
         """Spacing calculated correctly."""
@@ -320,7 +316,7 @@ logging:
         config = yaml.safe_load(yaml_str)
         validated = validate_config(config)
         # 5 levels -> 4 intervals, spacing = 20/4 = 5
-        assert validated.strategy.grid.spacing == Decimal("5.00")
+        assert validated.strategy["grid"].spacing == Decimal("5.00")
 
 
 class TestLoadConfig:
