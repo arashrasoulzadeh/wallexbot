@@ -18,6 +18,8 @@ from wallexbot.analytics.report import (
 )
 from wallexbot.config.schema import load_config
 from wallexbot.engine import BotEngine, EngineConfig
+from wallexbot.engine.recovery import RecoveryError, recoverable_runs
+from wallexbot.recover import rebuild_engine
 from wallexbot.setup import GridSetup, find_market
 from wallexbot.storage.repository import SQLiteRepository
 from wallexbot.strategy.grid.parameters import GridMode
@@ -67,7 +69,15 @@ def create_parser() -> argparse.ArgumentParser:
 
     # paper command
     paper_parser = subparsers.add_parser("paper", help="Run paper trading on live prices")
-    paper_parser.add_argument("config", help="Config YAML file")
+    paper_parser.add_argument(
+        "config", nargs="?", help="Config YAML file (not needed with --resume)"
+    )
+    paper_parser.add_argument(
+        "--resume",
+        nargs="?",
+        const="latest",
+        help="Continue an interrupted run (needs --db): the latest one, or the given RUN_ID",
+    )
     paper_parser.add_argument(
         "--feed", choices=["ws", "poll"], default="ws", help="Price source (default: ws)"
     )
@@ -168,7 +178,12 @@ def main(args: list[str] | None = None) -> int:
             )
         elif parsed.command == "paper":
             return cmd_paper(
-                parsed.config, parsed.feed, parsed.duration, parsed.db, parsed.status_every
+                parsed.config,
+                parsed.feed,
+                parsed.duration,
+                parsed.db,
+                parsed.status_every,
+                parsed.resume,
             )
         elif parsed.command == "report":
             return cmd_report(parsed.run_id)
@@ -371,15 +386,71 @@ async def _run_paper(
         raise task.exception()  # type: ignore[misc]
 
 
+def _finish_paper(
+    engine: BotEngine, price_feed: Any, symbol: str, duration: float | None, status_every: float
+) -> int:
+    """Run an engine until it ends, the time is up or Ctrl+C, then print the summary."""
+    try:
+        asyncio.run(_run_paper(engine, price_feed, duration, status_every))
+    except KeyboardInterrupt:
+        print("\nInterrupted, stopping...")
+    print(format_engine_status(symbol, engine.status()))
+    return 0
+
+
+def _resume_paper(
+    client: WallexRestClient,
+    db: str | None,
+    resume: str,
+    feed: str,
+    duration: float | None,
+    status_every: float,
+) -> int:
+    """Continue a paper run that a crash left unfinished."""
+    if not db:
+        print("Error: --resume needs --db (the database the run was recorded in)")
+        return 1
+    repository = SQLiteRepository(db)
+    if resume == "latest":
+        interrupted = recoverable_runs(repository, set())
+        if not interrupted:
+            print(f"Nothing to recover: no interrupted run in {db}")
+            return 1
+        if len(interrupted) > 1:
+            print("Several interrupted runs; pick one with --resume RUN_ID:")
+            for run in interrupted:
+                print(f"  {run['id']}  {run['market']}  started {run['started_at']}")
+            return 1
+        resume = interrupted[0]["id"]
+
+    try:
+        engine, price_feed, note = rebuild_engine(repository, resume, client, make_price_feed, feed)
+    except RecoveryError as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    symbol = str(engine.config.exchange.market_info().symbol)
+    print(f"Recovering run {resume} ({symbol}). Press Ctrl+C to stop.")
+    print(note)
+    print("Paper only: orders exist inside the simulator, nothing is sent to Wallex.")
+    return _finish_paper(engine, price_feed, symbol, duration, status_every)
+
+
 def cmd_paper(
-    config_file: str,
+    config_file: str | None,
     feed: str = "ws",
     duration: float | None = None,
     db: str | None = None,
     status_every: float = 30.0,
+    resume: str | None = None,
 ) -> int:
     """Paper-trade the configured grid on live public prices (no API key, no real orders)."""
     client = make_rest_client()
+    if resume is not None:
+        return _resume_paper(client, db, resume, feed, duration, status_every)
+    if config_file is None:
+        print("Error: a config file is required (or use --resume to continue an interrupted run)")
+        return 1
     setup = _load_grid_setup(config_file, client)
     if setup is None:
         return 1
@@ -394,18 +465,13 @@ def cmd_paper(
             risk=setup.risk,
             repository=repository,
             run_name=f"paper-{setup.symbol}",
+            app_config=setup.app_config,
         )
     )
 
     print(f"Paper trading {setup.symbol} on live prices ({feed}). Press Ctrl+C to stop.")
     print("Paper only: orders exist inside the simulator, nothing is sent to Wallex.")
-    try:
-        asyncio.run(_run_paper(engine, price_feed, duration, status_every))
-    except KeyboardInterrupt:
-        print("\nInterrupted, stopping...")
-
-    print(format_engine_status(setup.symbol, engine.status()))
-    return 0
+    return _finish_paper(engine, price_feed, setup.symbol, duration, status_every)
 
 
 def cmd_report(run_id: str) -> int:

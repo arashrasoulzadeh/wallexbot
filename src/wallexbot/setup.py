@@ -6,7 +6,7 @@ the same way.
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 from wallexbot.config.schema import Config
 from wallexbot.domain.balance import Balance
@@ -43,6 +43,7 @@ class GridSetup:
     risk: RiskMonitor
     initial_quote: Decimal
     initial_base: Decimal
+    app_config: dict[str, Any]  # the validated config as plain JSON, saved with checkpoints
 
     @classmethod
     def from_config(cls, config: Config, info: WallexMarket) -> "GridSetup":
@@ -82,6 +83,7 @@ class GridSetup:
             ),
             initial_quote=Decimal(sim.initial_balance_quote),
             initial_base=Decimal(sim.initial_balance_base),
+            app_config=config.model_dump(mode="json", by_alias=True),
         )
 
     def new_exchange(self) -> SimulatedExchange:

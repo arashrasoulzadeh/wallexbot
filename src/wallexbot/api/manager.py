@@ -82,6 +82,7 @@ class RunManager:
                 risk=setup.risk,
                 repository=self.repo,
                 run_name=f"paper-{symbol}",
+                app_config=config.model_dump(mode="json", by_alias=True),
             )
         )
         task = engine.start()
