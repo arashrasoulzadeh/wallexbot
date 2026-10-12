@@ -102,6 +102,12 @@ Every Wallex spot market (373 at the last check, TMN- and USDT-quoted) can be us
   with no price (inactive).
 - Configure loads these values when you pick a coin (or open `/configure?symbol=BTCTMN`); you review and save.
   Market status accepts `?symbol=` the same way.
+- The list also shows each coin's 7-day change (Wallex's `change_7D`). Market status has a "last 7 days" card from
+  hourly candles (`GET /api/markets/{symbol}/week`): high, low, range, where the price sits in it, and the average and
+  biggest hourly high-low span. Those hourly figures show how far a coin usually travels in an hour, which is the
+  scale a grid's spacing should be compared with. The grid defaults do not use them yet.
+- Every table with a header row sorts by clicking a column (again to reverse); the choice survives refreshes. Empty
+  values always go last. The grid ladder on the Paper page is not sortable.
 - Wallex does not currently report 24 h turnover for spot markets, so the list cannot be ranked by popularity;
   the page then sorts by name and shows "-" for turnover.
 - The minimum order shown is Wallex's OTC minimum, used as a hint; the real spot minimum and fee tier are still

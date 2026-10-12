@@ -96,6 +96,9 @@
       if (value === null || value === undefined || value === '') { return '--'; }
       const n = Number(value);
       if (!isFinite(n)) { return String(value); }
+      if (n !== 0 && Math.abs(n) < 0.01) {   // tiny prices (meme coins): significant digits, not decimals
+        return n.toLocaleString('en-US', { maximumSignificantDigits: 4, maximumFractionDigits: 12 });
+      }
       return n.toLocaleString('en-US', { maximumFractionDigits: maxFraction === undefined ? 2 : maxFraction });
     },
     pct(value, digits) {
@@ -200,6 +203,69 @@
       async current() { return wb.config.load() || wb.api('/api/config/default'); }
     }
   };
+
+  /* Click a column header to sort a table (again to reverse). Tables are rebuilt on every refresh,
+     so the choice is remembered per table and re-applied after each rebuild. A cell can carry a
+     data-sort attribute when its text does not sort right (dates). Empty cells always go last. */
+  const sortState = new WeakMap();
+  const sortWatch = new WeakMap();
+  const NUMBER = /^([+-]?\d*\.?\d+(?:e[+-]?\d+)?)\s*%?\s*[A-Za-z]*$/i;
+
+  function sortKey(cell) {
+    const attr = cell.getAttribute('data-sort');
+    const text = (attr !== null ? attr : cell.textContent).trim();
+    if (text === '' || text === '-' || text === '--') { return null; }
+    const m = NUMBER.exec(text.replace(/,/g, ''));
+    return m ? Number(m[1]) : text.toLowerCase();
+  }
+
+  function applySort(table) {
+    const state = sortState.get(table);
+    const body = table.tBodies[0];
+    const head = table.tHead && table.tHead.rows[0];
+    if (!state || !body || !head) { return; }
+    Array.prototype.forEach.call(head.cells, function (th, i) {
+      if (i === state.col) { th.setAttribute('aria-sort', state.dir === 1 ? 'ascending' : 'descending'); }
+      else { th.removeAttribute('aria-sort'); }
+    });
+    const rows = Array.prototype.slice.call(body.rows).map(function (row, index) {
+      return { row: row, index: index, key: row.cells[state.col] ? sortKey(row.cells[state.col]) : null };
+    });
+    rows.sort(function (a, b) {
+      if (a.key === null || b.key === null) { return a.key === b.key ? a.index - b.index : (a.key === null ? 1 : -1); }
+      if (typeof a.key !== typeof b.key) { return typeof a.key === 'number' ? -1 : 1; }
+      const c = a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+      return c ? c * state.dir : a.index - b.index;
+    });
+    rows.forEach(function (r) { body.appendChild(r.row); });
+  }
+
+  function watch(table) {
+    if (sortWatch.has(table)) { return; }
+    const observer = new MutationObserver(function () {
+      observer.takeRecords();
+      applySort(table);
+      observer.takeRecords();   // our own reordering is not a rebuild
+    });
+    observer.observe(table, { childList: true });
+    sortWatch.set(table, observer);
+  }
+
+  wb.resetSort = function (table) {
+    sortState.delete(table);
+    if (table.tHead) { Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) { th.removeAttribute('aria-sort'); }); }
+  };
+
+  document.addEventListener('click', function (event) {
+    const th = event.target.closest ? event.target.closest('th') : null;
+    const table = th && th.closest('table');
+    if (!table || table.hasAttribute('data-nosort') || !table.tHead || th.parentNode.parentNode !== table.tHead || !th.textContent.trim()) { return; }
+    const previous = sortState.get(table);
+    const dir = previous && previous.col === th.cellIndex ? -previous.dir : 1;
+    sortState.set(table, { col: th.cellIndex, dir: dir });
+    watch(table);
+    applySort(table);
+  });
 
   window.wb = wb;
   wb.ready = new Promise(function (resolve) {

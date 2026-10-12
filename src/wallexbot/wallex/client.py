@@ -103,6 +103,9 @@ class WallexRestClient:
                 change_24h_pct=None
                 if item.get("change_24h") is None
                 else _decimal(item["change_24h"]),
+                change_7d_pct=None
+                if item.get("change_7D") is None
+                else _decimal(item["change_7D"]),
                 high_24h=_optional_decimal(item.get("highest_24h_price")),
                 low_24h=_optional_decimal(item.get("lowest_24h_price")),
                 quote_volume_24h=_optional_decimal(item.get("quote_volume_24h")),

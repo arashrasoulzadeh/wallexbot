@@ -19,6 +19,7 @@ class Market:
     # market data shown in the coin list (None when Wallex has none, e.g. an inactive market)
     price: Decimal | None = None
     change_24h_pct: Decimal | None = None
+    change_7d_pct: Decimal | None = None
     high_24h: Decimal | None = None
     low_24h: Decimal | None = None
     quote_volume_24h: Decimal | None = None

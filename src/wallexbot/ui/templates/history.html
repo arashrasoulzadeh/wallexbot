@@ -67,7 +67,9 @@ wb.ready.then(async function () {
             const row = wb.el('tr', {});
             cells.forEach(function (c, i) {
                 const cls = (head[i][1] || '') + (c && c.cls ? ' ' + c.cls : '');
-                row.appendChild(wb.el('td', { class: cls.trim(), text: c && c.text !== undefined ? c.text : String(c) }));
+                const td = wb.el('td', { class: cls.trim(), text: c && c.text !== undefined ? c.text : String(c) });
+                if (c && c.sort !== undefined) { td.setAttribute('data-sort', String(c.sort)); }
+                row.appendChild(td);
             });
             body.appendChild(row);
         });
@@ -141,7 +143,7 @@ wb.ready.then(async function () {
 
         table($('trades'), [['col.time'], ['col.side'], ['col.price', 'num'], ['col.qty', 'num'], ['col.fee', 'num']],
             d.fills.slice(0, 200).map(function (f) {
-                return [wb.time(f.timestamp), { text: wb.t('side.' + f.side), cls: f.side === 'BUY' ? 'buy' : 'sell' },
+                return [{ text: wb.time(f.timestamp), sort: f.timestamp }, { text: wb.t('side.' + f.side), cls: f.side === 'BUY' ? 'buy' : 'sell' },
                     wb.num(f.price, 4), wb.num(f.quantity, 4), wb.num(f.fee, 6) + ' ' + f.fee_asset];
             }));
 

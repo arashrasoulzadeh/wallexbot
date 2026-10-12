@@ -448,3 +448,23 @@ def test_a_paper_run_starts_and_trades_from_a_coins_defaults(coins_client, symbo
     assert run["orders"] and run["status"]["rejected_orders"] == 0
     assert run["status"]["fills"] >= 1  # the -0.5% / +0.4% swings cross at least one level
     coins_client.post(f"/api/runs/{run_id}/stop")
+
+
+def test_market_rows_carry_the_seven_day_change():
+    import dataclasses
+
+    markets = real_markets()
+    markets[0] = dataclasses.replace(markets[0], change_7d_pct=_D("-4.2"))
+    repo = InMemoryRepository()
+    manager = RunManager(repo, client_factory=lambda: FakeClient(markets=markets))
+    with TestClient(create_app(repo=repo, engine_manager=manager)) as c:
+        rows = {r["symbol"]: r for r in c.get("/api/markets").json()}
+    assert rows[str(markets[0].symbol)]["change_7d_pct"] == "-4.2"
+    assert all("change_7d_pct" in r for r in rows.values())
+
+
+def test_week_overview_for_a_coin(coins_client):
+    body = coins_client.get("/api/markets/USDTTMN/week").json()
+    assert body["symbol"] == "USDTTMN" and body["hours"] == 40
+    assert {"high", "low", "range_pct", "avg_hour_range_pct", "max_hour_range_pct"} <= set(body)
+    assert coins_client.get("/api/markets/NOPEUSDT/week").status_code == 404

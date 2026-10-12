@@ -17,6 +17,7 @@ from typing import Any
 from wallexbot.analytics.backtest import Backtester, BacktestResult
 from wallexbot.analytics.market_status import build_market_status, jsonable
 from wallexbot.analytics.replay import candles_to_ticks
+from wallexbot.analytics.week_stats import week_stats
 from wallexbot.config.schema import Config, validate_config
 from wallexbot.engine import BotEngine, EngineConfig, EngineState
 from wallexbot.engine.recovery import recoverable_runs
@@ -29,6 +30,7 @@ from wallexbot.wallex.live_feed import make_price_feed
 from wallexbot.wallex.price_feed import PriceFeedReplay
 
 MAX_CURVE_POINTS = 200
+WEEK_SECONDS = 7 * 24 * 3600
 MARKETS_TTL_SECONDS = 10.0  # the coin list is ~50 KB; do not refetch it on every page refresh
 
 
@@ -148,6 +150,7 @@ class RunManager:
                     "quote": m.quote_asset,
                     "price": m.price,
                     "change_24h_pct": m.change_24h_pct,
+                    "change_7d_pct": m.change_7d_pct,
                     "quote_volume_24h": m.quote_volume_24h,
                     "min_notional_hint": m.min_notional_hint,
                     "price_precision": m.price_precision,
@@ -185,6 +188,24 @@ class RunManager:
             }
         )
         return result
+
+    async def market_week(self, symbol: str) -> dict[str, Any] | None:
+        """How far and how fast a coin moved over the last 7 days; None if the market is unknown."""
+        await self._market_rows()
+        info = self._market_objects.get(symbol)
+        if info is None:
+            return None
+        client = self._client_factory()
+        now = int(time.time())
+        # resolution "240" is what returns hourly bars on Wallex (see docs/wallex-api.md)
+        candles = await asyncio.to_thread(
+            client.get_candles, symbol, "240", now - WEEK_SECONDS, now
+        )
+        stats = week_stats(candles, info.price) if info.price is not None else None
+        if stats is None:
+            return {"symbol": symbol, "hours": 0}
+        week: dict[str, Any] = jsonable({"symbol": symbol, **stats})
+        return week
 
     async def market_status(self, config: Config) -> dict[str, Any]:
         """Neutral market facts for the configured grid (public data only)."""

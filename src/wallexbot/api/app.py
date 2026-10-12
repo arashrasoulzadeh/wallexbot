@@ -132,6 +132,17 @@ def create_app(
             raise HTTPException(404, f"market {symbol} not found")
         return result
 
+    @app.get("/api/markets/{symbol}/week")
+    async def get_market_week(symbol: str) -> Any:
+        """The coin's last 7 days from hourly candles: range and how much it moves per hour."""
+        try:
+            result = await manager.market_week(symbol)
+        except (WallexApiError, httpx.HTTPError, OSError) as e:
+            raise HTTPException(502, str(e)) from e
+        if result is None:
+            raise HTTPException(404, f"market {symbol} not found")
+        return result
+
     # Candles
     @app.get("/api/candles")
     async def get_candles(

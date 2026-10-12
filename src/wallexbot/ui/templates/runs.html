@@ -47,7 +47,7 @@ wb.ready.then(function () {
                 } }));
             }
             return wb.el('tr', {}, wb.el('td', { text: r.id }), wb.el('td', { text: r.market }),
-                wb.el('td', {}, status), wb.el('td', { text: wb.time(r.started_at) }), buttons);
+                wb.el('td', {}, status), wb.el('td', { text: wb.time(r.started_at), 'data-sort': String(r.started_at) }), buttons);
         }));
     }
 

@@ -11,6 +11,7 @@
         <div><label for="sort" data-i18n="mkts.sort">Sort by</label>
             <select id="sort"><option value="volume" data-i18n="mkts.byVolume"></option>
                 <option value="change" data-i18n="mkts.byChange"></option>
+                <option value="change7" data-i18n="mkts.byChange7"></option>
                 <option value="name" data-i18n="mkts.byName"></option></select></div>
     </div>
     <p class="muted" id="count"></p>
@@ -28,6 +29,13 @@ wb.ready.then(async function () {
         if (text) { box.appendChild(wb.el('div', { class: kind, text: text })); }
     }
 
+    /* small prices (meme coins) need significant digits, not decimal places */
+    function fmtPrice(v) {
+        const n = Number(v);
+        if (n > 0 && n < 1) { return n.toLocaleString('en-US', { maximumSignificantDigits: 4, maximumFractionDigits: 12 }); }
+        return wb.num(v, 6);
+    }
+
     function visible() {
         const q = $('search').value.trim().toLowerCase();
         const quote = $('quote').value;
@@ -37,6 +45,7 @@ wb.ready.then(async function () {
         const how = $('sort').value;
         rows.sort(function (a, b) {
             if (how === 'name') { return a.symbol < b.symbol ? -1 : 1; }
+            if (how === 'change7') { return Number(b.change_7d_pct === null ? -1e9 : b.change_7d_pct) - Number(a.change_7d_pct === null ? -1e9 : a.change_7d_pct); }
             if (how === 'change') { return Number(b.change_24h_pct || -1e9) - Number(a.change_24h_pct || -1e9); }
             return Number(b.quote_volume_24h || 0) - Number(a.quote_volume_24h || 0);
         });
@@ -48,7 +57,7 @@ wb.ready.then(async function () {
         $('count').textContent = wb.t('mkts.count', { shown: rows.length, total: markets.length });
         const node = wb.clear($('table'));
         const head = wb.el('tr', {});
-        [['mkts.symbol', ''], ['mkts.price', 'num'], ['mkts.change', 'num'], ['mkts.volume', 'num'], ['mkts.min', 'num'], ['', '']].forEach(function (h) {
+        [['mkts.symbol', ''], ['mkts.price', 'num'], ['mkts.change', 'num'], ['mkts.change7', 'num'], ['mkts.volume', 'num'], ['mkts.min', 'num'], ['', '']].forEach(function (h) {
             head.appendChild(wb.el('th', { class: h[1], text: h[0] ? wb.t(h[0]) : '' }));
         });
         node.appendChild(wb.el('thead', {}, head));
@@ -56,8 +65,9 @@ wb.ready.then(async function () {
         rows.slice(0, 400).forEach(function (m) {
             const tr = wb.el('tr', {});
             tr.appendChild(wb.el('td', { text: m.symbol }));
-            tr.appendChild(wb.el('td', { class: 'num', text: m.price === null ? wb.t('mkts.noPrice') : wb.num(m.price, 6) }));
+            tr.appendChild(wb.el('td', { class: 'num', text: m.price === null ? wb.t('mkts.noPrice') : fmtPrice(m.price), 'data-sort': m.price === null ? '' : String(m.price) }));
             tr.appendChild(wb.el('td', { class: 'num ' + wb.signClass(m.change_24h_pct), text: m.change_24h_pct === null ? '-' : wb.pct(m.change_24h_pct, 2) }));
+            tr.appendChild(wb.el('td', { class: 'num ' + wb.signClass(m.change_7d_pct), text: m.change_7d_pct === null ? '-' : wb.pct(m.change_7d_pct, 2) }));
             tr.appendChild(wb.el('td', { class: 'num', text: m.quote_volume_24h === null ? '-' : wb.num(m.quote_volume_24h, 0) }));
             tr.appendChild(wb.el('td', { class: 'num', text: m.min_notional_hint === null ? '-' : wb.num(m.min_notional_hint, 2) }));
             const last = wb.el('td', {});
@@ -84,7 +94,7 @@ wb.ready.then(async function () {
     ['input', 'change'].forEach(function (ev) {
         $('search').addEventListener(ev, render);
         $('quote').addEventListener(ev, render);
-        $('sort').addEventListener(ev, render);
+        $('sort').addEventListener(ev, function () { wb.resetSort($('table')); render(); });
     });
     document.addEventListener('wb:lang', render);
     render();

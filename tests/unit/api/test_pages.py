@@ -181,3 +181,12 @@ def test_the_market_page_states_that_it_is_not_advice_and_has_no_buy_sell_verdic
     for key, text in en.items():
         if key.startswith("mk."):
             assert "buy now" not in text.lower() and "sell now" not in text.lower(), key
+
+
+def test_tables_sort_by_column_and_the_ladder_keeps_its_order(client):
+    js = client.get("/static/app.js").text
+    assert "wb.resetSort" in js and "aria-sort" in js and "data-nosort" in js
+    assert "data-nosort" in client.get("/paper").text  # the ladder has a marker row between levels
+    assert 'aria-sort="ascending"' in client.get("/static/app.css").text or "aria-sort" in (
+        client.get("/static/app.css").text
+    )

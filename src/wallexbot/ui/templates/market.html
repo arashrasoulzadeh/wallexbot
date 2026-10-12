@@ -33,6 +33,13 @@
         <div class="card"><h2 data-i18n="mk.warnings">Conditions worth knowing</h2><ul class="warn-list" id="warnings"></ul><p id="no-warnings" class="muted" style="display:none" data-i18n="mk.noWarnings"></p></div>
     </div>
 
+    <div class="card">
+        <h2 data-i18n="mk.week">The last 7 days</h2>
+        <p class="muted" id="week-none" style="display:none" data-i18n="mk.weekNone"></p>
+        <table id="week"></table>
+        <p class="muted" data-i18n="mk.weekNote"></p>
+    </div>
+
     <p class="muted"><span data-i18n="mk.updates"></span> · <span id="grid-used"></span></p>
 </div>
 
@@ -144,6 +151,24 @@ wb.ready.then(async function () {
         $('grid-used').textContent = wb.t('mk.grid') + ': ' + data.symbol + ' ' + wb.num(g.lower, 0) + ' - ' + wb.num(g.upper, 0) + ', ' + g.levels;
     }
 
+    let week = null;
+    function renderWeek() {
+        const box = wb.clear($('week'));
+        $('week-none').style.display = week && week.hours ? 'none' : '';
+        if (!week || !week.hours) { return; }
+        [row('mk.weekHigh', wb.num(week.high, 6)), row('mk.weekLow', wb.num(week.low, 6)),
+         row('mk.weekRange', wb.num(week.range_pct, 2) + '%'),
+         row('mk.weekPosition', wb.num(week.position_pct, 0) + '%'),
+         row('mk.weekHour', wb.num(week.avg_hour_range_pct, 3) + '%'),
+         row('mk.weekHourMax', wb.num(week.max_hour_range_pct, 3) + '%')
+        ].forEach(function (r) { box.appendChild(r); });
+    }
+    async function loadWeek() {
+        try { week = await wb.api('/api/markets/' + encodeURIComponent(config.market.symbol) + '/week'); }
+        catch (e) { week = null; }
+        renderWeek();
+    }
+
     async function load() {
         try {
             data = await wb.post('/api/market-status', { config: config });
@@ -152,7 +177,8 @@ wb.ready.then(async function () {
         } catch (e) { say('error', wb.t('mk.error') + ': ' + e.message); }
     }
 
-    document.addEventListener('wb:lang', render);
+    document.addEventListener('wb:lang', function () { render(); renderWeek(); });
+    loadWeek();
     await load();
     setInterval(load, 15000);
 });

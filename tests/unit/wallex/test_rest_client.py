@@ -171,3 +171,23 @@ def test_every_spot_market_is_returned_including_ones_without_a_price():
     assert any(
         m.price is None for m in markets
     )  # inactive markets have no price: kept, not crashed on
+
+
+def test_get_markets_reads_the_seven_day_change():
+    item = {
+        "symbol": "BTCTMN",
+        "base_asset": "BTC",
+        "quote_asset": "TMN",
+        "is_spot": True,
+        "price": "100",
+        "price_precision": 0,
+        "amount_precision": 6,
+        "change_24h": 1.5,
+        "change_7D": -8.25,
+    }
+
+    client, _ = client_for(
+        {"result": {"markets": [item, {**item, "symbol": "X", "change_7D": None}]}}
+    )
+    markets = client.get_markets()
+    assert markets[0].change_7d_pct == D("-8.25") and markets[1].change_7d_pct is None

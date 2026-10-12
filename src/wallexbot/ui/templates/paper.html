@@ -27,7 +27,7 @@
     <div id="waiting"></div>
     <div class="stats" id="stats"></div>
     <div class="grid">
-        <div class="card"><h2 data-i18n="paper.grid">Grid ladder</h2><div class="scroll"><table class="ladder" id="ladder"></table></div></div>
+        <div class="card"><h2 data-i18n="paper.grid">Grid ladder</h2><div class="scroll"><table class="ladder" id="ladder" data-nosort></table></div></div>
         <div class="card"><h2 data-i18n="paper.balances">Balances</h2><div class="scroll"><table id="balances"></table></div></div>
     </div>
     <div class="grid">
@@ -61,7 +61,9 @@ wb.ready.then(function () {
         rows.forEach(function (cells) {
             const row = wb.el('tr', {});
             cells.forEach(function (cell) {
-                row.appendChild(wb.el('td', cell && cell.cls ? { class: cell.cls, text: cell.text } : { text: String(cell) }));
+                const td = wb.el('td', cell && cell.text !== undefined ? { class: cell.cls || '', text: cell.text } : { text: String(cell) });
+                if (cell && cell.sort !== undefined) { td.setAttribute('data-sort', String(cell.sort)); }
+                row.appendChild(td);
             });
             body.appendChild(row);
         });
@@ -137,7 +139,7 @@ wb.ready.then(function () {
         table($('orders'), ['col.level', 'col.side', 'col.price', 'col.qty', 'col.filled'],
             run.orders.map(function (o) { return [o.level === null ? '--' : o.level, side(o.side), wb.num(o.price, 4), wb.num(o.quantity, 4), wb.num(o.filled, 4)]; }));
         table($('fills'), ['col.time', 'col.side', 'col.price', 'col.qty', 'col.fee'],
-            run.fills.slice(0, 20).map(function (f) { return [wb.time(f.time), side(f.side), wb.num(f.price, 4), wb.num(f.quantity, 4), wb.num(f.fee, 6) + ' ' + f.fee_asset]; }));
+            run.fills.slice(0, 20).map(function (f) { return [{ text: wb.time(f.time), sort: f.time }, side(f.side), wb.num(f.price, 4), wb.num(f.quantity, 4), wb.num(f.fee, 6) + ' ' + f.fee_asset]; }));
         const events = wb.clear($('events'));
         s.events.slice().reverse().forEach(function (e) { events.appendChild(wb.el('li', { text: e })); });
     }

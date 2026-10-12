@@ -92,3 +92,8 @@ td.num, th.num { text-align: end; }
 .bar .here-label { position: absolute; top: -18px; transform: translateX(-50%); font-size: .78rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
 .warn-list { list-style: none; margin: 0; padding: 0; }
 .warn-list li { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: .55rem .8rem; margin-bottom: .5rem; }
+
+/* sortable tables: click a header */
+thead th { cursor: pointer; user-select: none; white-space: nowrap; }
+thead th[aria-sort="ascending"]::after { content: " \25B2"; font-size: .7em; }
+thead th[aria-sort="descending"]::after { content: " \25BC"; font-size: .7em; }
