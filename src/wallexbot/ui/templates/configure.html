@@ -1,162 +1,123 @@
 {% extends "base.html" %}
-
 {% block content %}
+<h1 data-i18n="cfg.title">Configure the grid</h1>
+<p class="lead" data-i18n="cfg.intro"></p>
+
 <div class="card">
-    <h2>Configure Grid</h2>
-    <div class="badge badge-paper">PAPER MODE</div>
-
-    <form hx-post="/api/config/validate" hx-target="#validation-result" hx-swap="innerHTML" hx-trigger="change delay:500ms, keyup delay:500ms" id="config-form">
-        <div class="grid">
-            <div class="form-group">
-                <label>Market</label>
-                <select name="market.symbol" id="market-select" required>
-                    <option value="">Loading...</option>
-                </select>
-                <div id="market-info"></div>
-            </div>
-
-            <div class="form-group">
-                <label>Lower Price</label>
-                <input type="number" step="0.01" name="strategy.grid.lower_price" value="90.00" required>
-            </div>
-
-            <div class="form-group">
-                <label>Upper Price</label>
-                <input type="number" step="0.01" name="strategy.grid.upper_price" value="110.00" required>
-            </div>
-
-            <div class="form-group">
-                <label>Grid Count</label>
-                <input type="number" min="2" max="100" name="strategy.grid.grid_count" value="20" required>
-            </div>
-
-            <div class="form-group">
-                <label>Mode</label>
-                <select name="strategy.grid.mode">
-                    <option value="arithmetic">Arithmetic</option>
-                    <option value="geometric">Geometric</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>Total Investment (TMN)</label>
-                <input type="number" step="0.01" name="strategy.grid.total_investment" value="2000000.00" required>
-            </div>
-        </div>
-
-        <hr style="margin: 1rem 0;">
-
-        <h3>Risk Limits</h3>
-        <div class="grid">
-            <div class="form-group">
-                <label>Max Open Orders</label>
-                <input type="number" name="risk.max_open_orders" value="20">
-            </div>
-            <div class="form-group">
-                <label>Max Drawdown (%)</label>
-                <input type="number" step="0.01" name="risk.max_drawdown" value="0.05">
-            </div>
-            <div class="form-group">
-                <label>Daily Loss Limit (%)</label>
-                <input type="number" step="0.01" name="risk.daily_loss_limit" value="0.02">
-            </div>
-        </div>
-
-        <button type="submit" style="display: none;">Validate</button>
+    <form id="form" class="form-grid" autocomplete="off">
+        <div><label for="symbol" data-i18n="cfg.market">Market</label>
+            <input id="symbol" name="symbol" list="markets" required><datalist id="markets"></datalist></div>
+        <div><label for="lower_price" data-i18n="cfg.lower">Lower price</label><input id="lower_price" inputmode="decimal"></div>
+        <div><label for="upper_price" data-i18n="cfg.upper">Upper price</label><input id="upper_price" inputmode="decimal"></div>
+        <div><label for="grid_count" data-i18n="cfg.count">Grid levels</label><input id="grid_count" type="number" min="2" step="1"></div>
+        <div><label for="mode" data-i18n="cfg.mode">Spacing mode</label>
+            <select id="mode"><option value="arithmetic" data-i18n="cfg.mode.arithmetic"></option>
+                <option value="geometric" data-i18n="cfg.mode.geometric"></option></select></div>
+        <div><label for="total_investment" data-i18n="cfg.invest">Investment in the grid</label><input id="total_investment" inputmode="decimal"></div>
+        <div><label for="initial_balance_quote" data-i18n="cfg.capital">Starting balance</label><input id="initial_balance_quote" inputmode="decimal"></div>
+        <div><label for="fee_maker" data-i18n="cfg.feeMaker">Maker fee</label><input id="fee_maker" inputmode="decimal"></div>
+        <div><label for="fee_taker" data-i18n="cfg.feeTaker">Taker fee</label><input id="fee_taker" inputmode="decimal"></div>
+        <div><label for="min_notional" data-i18n="cfg.minNotional">Minimum order value</label><input id="min_notional" inputmode="decimal"></div>
+        <div><label for="max_drawdown" data-i18n="cfg.maxDd">Max drawdown</label><input id="max_drawdown" inputmode="decimal"></div>
+        <div><label for="daily_loss_limit" data-i18n="cfg.dailyLoss">Daily loss limit</label><input id="daily_loss_limit" inputmode="decimal"></div>
     </form>
-
-    <div id="validation-result" class="card" style="margin-top: 1rem;"></div>
-
-    <div class="card" style="margin-top: 1rem;">
-        <h3>Price Chart with Grid Levels</h3>
-        <div id="price-chart" class="chart-container"></div>
+    <div class="note" data-i18n="cfg.feeNote"></div>
+    <div id="result"></div>
+    <div class="actions">
+        <button id="save" type="button" data-i18n="common.save">Save configuration</button>
+        <button id="reset" type="button" class="secondary" data-i18n="common.reset">Reset to defaults</button>
     </div>
-
-    <div class="card" style="margin-top: 1rem;">
-        <h3>Derived Values</h3>
-        <div id="derived-values" class="grid"></div>
-    </div>
+    <div id="saved"></div>
 </div>
 
 <script>
-    // Load markets
-    fetch('/api/markets')
-        .then(r => r.json())
-        .then(markets => {
-            const select = document.getElementById('market-select');
-            select.innerHTML = markets.map(m => `<option value="${m.symbol}">${m.symbol} (${m.base}/${m.quote})</option>`).join('');
-            select.value = 'USDTTMN';
-        });
+wb.ready.then(async function () {
+    const $ = function (id) { return document.getElementById(id); };
+    const FIELDS = {
+        symbol: ['market', 'symbol'],
+        lower_price: ['strategy', 'grid', 'lower_price'], upper_price: ['strategy', 'grid', 'upper_price'],
+        grid_count: ['strategy', 'grid', 'grid_count'], mode: ['strategy', 'grid', 'mode'],
+        total_investment: ['strategy', 'grid', 'total_investment'],
+        initial_balance_quote: ['simulation', 'initial_balance_quote'],
+        fee_maker: ['simulation', 'fee_maker'], fee_taker: ['simulation', 'fee_taker'],
+        min_notional: ['simulation', 'min_notional'],
+        max_drawdown: ['risk', 'max_drawdown'], daily_loss_limit: ['risk', 'daily_loss_limit']
+    };
 
-    // Initialize chart
-    const chart = LightweightCharts.createChart(document.getElementById('price-chart'), {
-        width: document.getElementById('price-chart').clientWidth,
-        height: 400,
-        layout: { backgroundColor: '#ffffff', textColor: '#333' },
-        grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
+    function get(cfg, path) { return path.reduce(function (o, k) { return o[k]; }, cfg); }
+    function set(cfg, path, value) {
+        const last = path[path.length - 1];
+        get(cfg, path.slice(0, -1))[last] = value;
+    }
+
+    let base = await wb.config.current();
+
+    function fill(cfg) {
+        Object.keys(FIELDS).forEach(function (id) { $(id).value = get(cfg, FIELDS[id]); });
+    }
+    function collect() {
+        const cfg = JSON.parse(JSON.stringify(base));
+        Object.keys(FIELDS).forEach(function (id) {
+            const raw = $(id).value.trim();
+            set(cfg, FIELDS[id], id === 'grid_count' ? (raw === '' ? 0 : parseInt(raw, 10)) : raw);
+        });
+        return cfg;
+    }
+
+    async function validate() {
+        const box = wb.clear($('result'));
+        let answer;
+        try { answer = await wb.post('/api/config/validate', collect()); }
+        catch (e) { box.appendChild(wb.el('div', { class: 'error', text: e.message })); return null; }
+        if (!answer.valid) {
+            box.appendChild(wb.el('div', { class: 'error', text: wb.t('cfg.invalid') + ': ' + answer.errors.join('; ') }));
+            return false;
+        }
+        const d = answer.derived;
+        const rows = [
+            ['cfg.spacing', wb.num(d.spacing, 4)],
+            ['cfg.spacingPct', wb.num(Number(d.spacing_pct) * 100, 3) + '%'],
+            ['cfg.perLevel', wb.num(d.per_grid_investment, 2)],
+            ['cfg.roundTrip', wb.num(Number(d.round_trip_fee_rate) * 100, 3) + '%'],
+            ['cfg.profitCycle', wb.num(d.min_profit_per_cycle_after_fees, 4)]
+        ];
+        box.appendChild(wb.el('div', { class: 'ok', text: wb.t('cfg.valid') }));
+        const table = wb.el('table', {});
+        rows.forEach(function (r) { table.appendChild(wb.el('tr', {}, wb.el('td', { text: wb.t(r[0]) }), wb.el('td', { text: r[1] }))); });
+        box.appendChild(table);
+        return true;
+    }
+
+    let timer = null;
+    function later() { clearTimeout(timer); timer = setTimeout(validate, 350); }
+    document.querySelectorAll('#form input, #form select').forEach(function (n) { n.addEventListener('input', later); });
+    document.addEventListener('wb:lang', validate);
+
+    $('save').addEventListener('click', async function () {
+        const ok = await validate();
+        const note = wb.clear($('saved'));
+        if (ok) {
+            base = collect();
+            wb.config.save(base);
+            note.appendChild(wb.el('div', { class: 'ok', text: wb.t('common.saved') }));
+        }
+    });
+    $('reset').addEventListener('click', async function () {
+        wb.config.clear();
+        base = await wb.api('/api/config/default');
+        fill(base);
+        wb.clear($('saved'));
+        validate();
     });
 
-    const candleSeries = chart.addCandlestickSeries();
-    const buyLineSeries = chart.addLineSeries({ color: 'green', lineWidth: 1, lineStyle: 2 });
-    const sellLineSeries = chart.addLineSeries({ color: 'red', lineWidth: 1, lineStyle: 2 });
+    // market suggestions (spot markets from the public API); the form still works without them
+    wb.api('/api/markets').then(function (markets) {
+        const list = $('markets');
+        markets.forEach(function (m) { list.appendChild(wb.el('option', { value: m.symbol })); });
+    }).catch(function () { /* offline: free text */ });
 
-    // Update chart when form changes
-    document.getElementById('config-form').addEventListener('change', updateChart);
-    document.getElementById('config-form').addEventListener('keyup', updateChart);
-
-    function updateChart() {
-        const lower = parseFloat(document.querySelector('[name="strategy.grid.lower_price"]').value) || 0;
-        const upper = parseFloat(document.querySelector('[name="strategy.grid.upper_price"]').value) || 0;
-        const count = parseInt(document.querySelector('[name="strategy.grid.grid_count"]').value) || 0;
-        const mode = document.querySelector('[name="strategy.grid.mode"]').value;
-
-        if (!lower || !upper || count < 2) return;
-
-        // Generate levels
-        const levels = generateLevels(lower, upper, count, mode);
-
-        // Update derived values
-        updateDerivedValues(lower, upper, count, mode, levels);
-
-        // Update chart lines
-        const buyLevels = levels.filter(l => l.side === 'buy').map(l => ({ time: Date.now()/1000, value: l.price }));
-        const sellLevels = levels.filter(l => l.side === 'sell').map(l => ({ time: Date.now()/1000, value: l.price }));
-
-        buyLineSeries.setData(buyLevels);
-        sellLineSeries.setData(sellLevels);
-    }
-
-    function generateLevels(lower, upper, count, mode) {
-        const levels = [];
-        if (mode === 'arithmetic') {
-            const step = (upper - lower) / (count - 1);
-            for (let i = 0; i < count; i++) {
-                levels.push({ price: lower + step * i, index: i });
-            }
-        } else {
-            const ratio = Math.pow(upper / lower, 1 / (count - 1));
-            for (let i = 0; i < count; i++) {
-                levels.push({ price: lower * Math.pow(ratio, i), index: i });
-            }
-        }
-        return levels;
-    }
-
-    function updateDerivedValues(lower, upper, count, mode, levels) {
-        const container = document.getElementById('derived-values');
-        const spacing = mode === 'arithmetic' ? (upper - lower) / (count - 1) : 'varies';
-        const perGrid = parseFloat(document.querySelector('[name="strategy.grid.total_investment"]').value) / count;
-
-        container.innerHTML = `
-            <div><strong>Spacing:</strong> ${spacing.toFixed(2)}</div>
-            <div><strong>Levels:</strong> ${count}</div>
-            <div><strong>Per-grid Investment:</strong> ${perGrid.toFixed(2)} TMN</div>
-            <div><strong>Buy Levels:</strong> ${levels.filter(l => l.side === 'buy').length}</div>
-            <div><strong>Sell Levels:</strong> ${levels.filter(l => l.side === 'sell').length}</div>
-        `;
-    }
-
-    // Initial chart load
-    updateChart();
+    fill(base);
+    validate();
+});
 </script>
 {% endblock %}

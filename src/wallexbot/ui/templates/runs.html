@@ -1,87 +1,67 @@
 {% extends "base.html" %}
-
 {% block content %}
-<div class="card">
-    <h2>Runs History</h2>
-    <div class="badge badge-paper">PAPER MODE</div>
+<h1 data-i18n="runs.title">Runs</h1>
 
-    <table id="runs-table">
-        <thead>
-            <tr>
-                <th>Run ID</th>
-                <th>Status</th>
-                <th>Market</th>
-                <th>Mode</th>
-                <th>Started</th>
-                <th>Stopped</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody hx-get="/api/runs" hx-trigger="load, every 5s" hx-target="this">
-            <tr><td colspan="7">Loading...</td></tr>
-        </tbody>
-    </table>
+<div class="card">
+    <div class="scroll"><table id="runs"></table></div>
+    <p id="empty" class="muted" data-i18n="runs.empty" style="display:none"></p>
 </div>
 
-<div id="run-detail" class="card" style="margin-top: 1rem; display: none;">
-    <h3>Run Details: <span id="run-detail-id"></span></h3>
-    <button onclick="closeRunDetail()">Close</button>
-    
-    <div class="grid" style="margin-top: 1rem;">
-        <div class="card">
-            <h4>PnL</h4>
-            <div id="run-pnl"></div>
-            <canvas id="pnl-chart" height="200"></canvas>
-        </div>
-        <div class="card">
-            <h4>Grid</h4>
-            <div id="run-grid"></div>
-        </div>
-    </div>
-
-    <div class="grid" style="margin-top: 1rem;">
-        <div class="card">
-            <h4>Orders</h4>
-            <table id="run-orders">
-                <thead>
-                    <tr><th>ID</th><th>Side</th><th>Price</th><th>Qty</th><th>Status</th><th>Filled</th></tr>
-                </thead>
-                <tbody hx-get="/api/runs/{{run_id}}/orders" hx-trigger="load" hx-target="this"></tbody>
-            </table>
-        </div>
-        <div class="card">
-            <h4>Fills</h4>
-            <table id="run-fills">
-                <thead>
-                    <tr><th>Time</th><th>Price</th><th>Qty</th><th>Fee</th><th>Side</th></tr>
-                </thead>
-                <tbody hx-get="/api/runs/{{run_id}}/fills" hx-trigger="load" hx-target="this"></tbody>
-            </table>
-        </div>
-    </div>
+<div class="card">
+    <h2 data-i18n="runs.detail">Run details</h2>
+    <div id="detail"><span class="muted" data-i18n="runs.select"></span></div>
 </div>
 
 <script>
-    function openRunDetail(runId) {
-        document.getElementById('run-detail').style.display = 'block';
-        document.getElementById('run-detail-id').textContent = runId;
-        document.getElementById('run-detail').setAttribute('data-run-id', runId);
-        
-        // Load details
-        htmx.ajax('GET', `/api/runs/${runId}/pnl`, {target: '#run-pnl', swap: 'innerHTML'});
-        htmx.ajax('GET', `/api/runs/${runId}/grid`, {target: '#run-grid', swap: 'innerHTML'});
+wb.ready.then(function () {
+    const $ = function (id) { return document.getElementById(id); };
+    let selected = null;
+
+    function cells(table, head, rows) {
+        wb.clear(table);
+        const tr = wb.el('tr', {});
+        head.forEach(function (h) { tr.appendChild(wb.el('th', { text: wb.t(h) })); });
+        table.appendChild(wb.el('thead', {}, tr));
+        const body = wb.el('tbody', {});
+        rows.forEach(function (r) { body.appendChild(r); });
+        table.appendChild(body);
     }
 
-    function closeRunDetail() {
-        document.getElementById('run-detail').style.display = 'none';
+    async function list() {
+        let runs;
+        try { runs = await wb.api('/api/runs'); } catch (e) { return; }
+        $('empty').style.display = runs.length ? 'none' : '';
+        runs.sort(function (a, b) { return Number(b.started_at) - Number(a.started_at); });
+        cells($('runs'), ['runs.id', 'runs.market', 'runs.status', 'runs.started', 'col.order'], runs.map(function (r) {
+            return wb.el('tr', {}, wb.el('td', { text: r.id }), wb.el('td', { text: r.market }),
+                wb.el('td', {}, wb.badge(r.status)), wb.el('td', { text: wb.time(r.started_at) }),
+                wb.el('td', {}, wb.el('button', { class: 'secondary', type: 'button', text: wb.t('common.open'),
+                    onclick: function () { selected = r.id; detail(); } })));
+        }));
     }
 
-    // Table row click handler
-    document.body.addEventListener('click', function(e) {
-        const row = e.target.closest('tr[data-run-id]');
-        if (row) {
-            openRunDetail(row.dataset.runId);
-        }
-    });
+    async function detail() {
+        if (!selected) { return; }
+        const box = wb.clear($('detail'));
+        try {
+            const results = await Promise.all([
+                wb.api('/api/runs/' + selected), wb.api('/api/runs/' + selected + '/pnl'),
+                wb.api('/api/runs/' + selected + '/orders'), wb.api('/api/runs/' + selected + '/fills')]);
+            const run = results[0], pnl = results[1];
+            box.appendChild(wb.el('p', {}, wb.el('strong', { text: run.id }), ' ', wb.badge(run.status.state)));
+            const t = wb.el('table', {});
+            [['paper.realized', pnl.realized], ['paper.unrealized', pnl.unrealized], ['paper.fees', pnl.fees]].forEach(function (r) {
+                t.appendChild(wb.el('tr', {}, wb.el('td', { text: wb.t(r[0]) }), wb.el('td', { class: wb.signClass(r[1]), text: wb.num(r[1], 2) })));
+            });
+            box.appendChild(t);
+            box.appendChild(wb.el('p', { class: 'muted', text: wb.t('paper.orders') + ': ' + results[2].length + ' / ' + wb.t('paper.fills') + ': ' + results[3].length }));
+            if (run.status.halt_reason) { box.appendChild(wb.el('div', { class: 'error', text: run.status.halt_reason })); }
+        } catch (e) { box.appendChild(wb.el('div', { class: 'error', text: e.message })); }
+    }
+
+    list();
+    setInterval(function () { list(); detail(); }, 5000);
+    document.addEventListener('wb:lang', function () { list(); detail(); });
+});
 </script>
 {% endblock %}

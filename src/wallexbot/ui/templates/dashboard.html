@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 data-i18n="dash.title">Dashboard</h1>
+<p class="lead" data-i18n="dash.intro"></p>
+<div class="note" data-i18n="dash.caution"></div>
+
+<div class="grid">
+    <div class="card">
+        <h2 data-i18n="dash.runs">Paper runs</h2>
+        <div id="runs"><span class="muted" data-i18n="common.loading">Loading...</span></div>
+    </div>
+    <div class="card">
+        <h2 data-i18n="dash.config">Saved configuration</h2>
+        <div id="config"></div>
+    </div>
+</div>
+
+<script>
+wb.ready.then(function () {
+    async function render() {
+        const runsBox = wb.clear(document.getElementById('runs'));
+        try {
+            const runs = await wb.api('/api/runs');
+            const live = runs.filter(function (r) { return r.status === 'running' || r.status === 'paused'; });
+            if (!live.length) {
+                runsBox.appendChild(wb.el('p', { class: 'muted', text: wb.t('dash.noRuns') }));
+            } else {
+                live.forEach(function (r) {
+                    runsBox.appendChild(wb.el('p', {}, wb.badge(r.status), ' ' + r.market + ' ',
+                        wb.el('a', { href: '/paper', text: wb.t('common.open') })));
+                });
+            }
+        } catch (e) {
+            runsBox.appendChild(wb.el('p', { class: 'error', text: e.message }));
+        }
+
+        const box = wb.clear(document.getElementById('config'));
+        const saved = wb.config.load();
+        if (!saved) {
+            box.appendChild(wb.el('p', { class: 'muted', text: wb.t('dash.noConfig') }));
+            return;
+        }
+        const grid = saved.strategy.grid;
+        box.appendChild(wb.el('p', {}, wb.el('strong', { text: saved.market.symbol }),
+            ' ' + wb.num(grid.lower_price, 4) + ' - ' + wb.num(grid.upper_price, 4) + ', ' +
+            grid.grid_count + ' ' + wb.t('cfg.count').toLowerCase()));
+    }
+    render();
+    document.addEventListener('wb:lang', render);
+    setInterval(render, 5000);
+});
+</script>
+{% endblock %}

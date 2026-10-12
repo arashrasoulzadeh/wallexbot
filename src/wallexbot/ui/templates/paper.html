@@ -1,260 +1,206 @@
 {% extends "base.html" %}
-
 {% block content %}
+<h1 data-i18n="paper.title">Paper trading</h1>
+<p class="lead" data-i18n="paper.intro"></p>
+
 <div class="card">
-    <h2>Paper Trading Dashboard</h2>
-    <div class="badge badge-paper" style="font-size: 1.2rem; padding: 0.5rem 1rem;">PAPER MODE - LIVE PRICES</div>
-
-    <div id="status-bar" class="grid" style="margin: 1rem 0; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-        <div class="card">
-            <div id="connection-status" class="badge badge-halted">DISCONNECTED</div>
-            <div id="run-status" class="badge badge-halted">NOT RUNNING</div>
-        </div>
-        <div class="card">
-            <strong>Price:</strong> <span id="current-price">--</span> TMN
-        </div>
-        <div class="card">
-            <strong>Equity:</strong> <span id="equity">--</span> TMN
-        </div>
-        <div class="card">
-            <strong>Realized PnL:</strong> <span id="realized-pnl" style="color: green;">--</span> TMN
-        </div>
-        <div class="card">
-            <strong>Unrealized PnL:</strong> <span id="unrealized-pnl" style="color: orange;">--</span> TMN
-        </div>
-        <div class="card">
-            <strong>Cycles:</strong> <span id="cycles-completed">0</span>
-        </div>
-        <div class="card">
-            <strong>Fees Paid:</strong> <span id="fees-paid">0</span> TMN
-        </div>
+    <div class="form-grid">
+        <div><label for="feed" data-i18n="paper.feed">Price feed</label>
+            <select id="feed"><option value="ws" data-i18n="paper.feedWs"></option>
+                <option value="poll" data-i18n="paper.feedPoll"></option></select></div>
     </div>
-
-    <div class="grid" style="margin-top: 1rem;">
-        <div class="card" style="flex: 2;">
-            <h3>Price Chart & Grid Ladder</h3>
-            <div id="paper-chart" class="chart-container"></div>
-        </div>
-        <div class="card" style="flex: 1;">
-            <h3>Balances</h3>
-            <table id="balances-table">
-                <thead>
-                    <tr><th>Asset</th><th>Free</th><th>Locked</th><th>Total</th></tr>
-                </thead>
-                <tbody id="balances-body">
-                    <tr><td colspan="4">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
+    <div class="actions">
+        <button id="start" type="button" data-i18n="paper.start">Start</button>
+        <button id="pause" type="button" class="secondary" data-i18n="paper.pause">Pause</button>
+        <button id="resume" type="button" class="secondary" data-i18n="paper.resume">Resume</button>
+        <button id="stop" type="button" class="secondary" data-i18n="paper.stop">Stop</button>
+        <button id="kill" type="button" class="danger" data-i18n="paper.kill">Kill switch</button>
+        <span id="state-badge"></span> <span id="conn-badge"></span>
     </div>
+    <div id="message"></div>
+</div>
 
-    <div class="grid" style="margin-top: 1rem;">
-        <div class="card">
-            <h3>Open Orders</h3>
-            <table id="open-orders-table">
-                <thead>
-                    <tr><th>Level</th><th>Side</th><th>Price</th><th>Qty</th><th>Filled</th><th>Actions</th></tr>
-                </thead>
-                <tbody hx-get="/api/runs/{{run_id}}/orders" hx-trigger="load, every 2s" hx-target="this"></tbody>
-            </table>
-        </div>
-        <div class="card">
-            <h3>Recent Fills</h3>
-            <table id="fills-table">
-                <thead>
-                    <tr><th>Time</th><th>Side</th><th>Price</th><th>Qty</th><th>Fee</th></tr>
-                </thead>
-                <tbody hx-get="/api/runs/{{run_id}}/fills" hx-trigger="load, every 2s" hx-target="this"></tbody>
-            </table>
-        </div>
-    </div>
+<div id="idle" class="note" data-i18n="paper.noRun"></div>
 
-    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-        <button id="start-btn" onclick="startPaper()">Start Paper Trading</button>
-        <button id="pause-btn" onclick="pausePaper()" disabled>Pause</button>
-        <button id="resume-btn" onclick="resumePaper()" disabled style="display: none;">Resume</button>
-        <button id="stop-btn" onclick="stopPaper()" disabled>Stop</button>
-        <button id="kill-btn" onclick="killPaper()" disabled style="background: #dc3545;">Kill Switch</button>
+<div id="live" style="display:none">
+    <div class="stats" id="stats"></div>
+    <div class="grid">
+        <div class="card"><h2 data-i18n="paper.grid">Grid ladder</h2><div class="scroll"><table class="ladder" id="ladder"></table></div></div>
+        <div class="card"><h2 data-i18n="paper.balances">Balances</h2><div class="scroll"><table id="balances"></table></div></div>
     </div>
+    <div class="grid">
+        <div class="card"><h2 data-i18n="paper.orders">Open orders</h2><div class="scroll"><table id="orders"></table></div></div>
+        <div class="card"><h2 data-i18n="paper.fills">Recent fills</h2><div class="scroll"><table id="fills"></table></div></div>
+    </div>
+    <div class="card"><h2 data-i18n="paper.events">Events</h2><ul class="events" id="events"></ul></div>
 </div>
 
 <script>
-    let priceChart = null;
-    let gridLines = { buy: null, sell: null };
-    let ws = null;
-    let runId = null;
+wb.ready.then(function () {
+    const $ = function (id) { return document.getElementById(id); };
+    let runId = wb.read(wb.KEYS.paperRun);
+    let socket = null;
+    let finished = false;
+    let last = null;
 
-    // Initialize chart
-    function initChart() {
-        const ctx = document.getElementById('paper-chart');
-        if (!ctx) return;
-        
-        priceChart = LightweightCharts.createChart(ctx, {
-            width: ctx.clientWidth,
-            height: 400,
-            layout: { backgroundColor: '#ffffff', textColor: '#333' },
-            grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
+    const FINAL = ['stopped', 'halted', 'failed'];
+
+    function say(kind, text) {
+        const box = wb.clear($('message'));
+        if (text) { box.appendChild(wb.el('div', { class: kind, text: text })); }
+    }
+
+    function table(node, head, rows) {
+        wb.clear(node);
+        const tr = wb.el('tr', {});
+        head.forEach(function (h) { tr.appendChild(wb.el('th', { text: wb.t(h) })); });
+        node.appendChild(wb.el('thead', {}, tr));
+        const body = wb.el('tbody', {});
+        rows.forEach(function (cells) {
+            const row = wb.el('tr', {});
+            cells.forEach(function (cell) {
+                row.appendChild(wb.el('td', cell && cell.cls ? { class: cell.cls, text: cell.text } : { text: String(cell) }));
+            });
+            body.appendChild(row);
         });
-
-        const candleSeries = priceChart.addCandlestickSeries();
-        gridLines.buy = priceChart.addLineSeries({ color: 'green', lineWidth: 1, lineStyle: 2 });
-        gridLines.sell = priceChart.addLineSeries({ color: 'red', lineWidth: 1, lineStyle: 2 });
-        
-        return candleSeries;
+        node.appendChild(body);
     }
 
-    async function startPaper() {
-        const config = getConfigFromConfigurePage();
-        if (!config) {
-            alert('Please configure grid first on Configure page');
-            return;
-        }
+    function side(s) { return { cls: s === 'BUY' ? 'buy' : 'sell', text: wb.t('side.' + s) }; }
 
-        const response = await fetch('/api/paper-runs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config })
+    function stat(label, value, cls) {
+        return wb.el('div', { class: 'stat' }, wb.el('div', { class: 'label', text: wb.t(label) }),
+            wb.el('div', { class: 'value ' + (cls || ''), text: value }));
+    }
+
+    function setButtons(state) {
+        const running = state === 'running', paused = state === 'paused';
+        const active = running || paused;
+        $('start').disabled = active;
+        $('pause').disabled = !running;
+        $('resume').disabled = !paused;
+        $('stop').disabled = !active;
+        $('kill').disabled = !active;
+        $('feed').disabled = active;
+    }
+
+    function render(run) {
+        last = run;
+        const s = run.status;
+        $('idle').style.display = 'none';
+        $('live').style.display = '';
+        wb.clear($('state-badge')).appendChild(wb.badge(s.state));
+        setButtons(s.state);
+
+        const change = (s.equity !== null && s.initial_equity !== null && Number(s.initial_equity) !== 0)
+            ? (Number(s.equity) - Number(s.initial_equity)) / Number(s.initial_equity) * 100 : null;
+        const stats = wb.clear($('stats'));
+        [
+            stat('paper.price', wb.num(s.last_price, 4)),
+            stat('paper.equity', change === null ? '--' : wb.pct(change, 3), wb.signClass(change)),
+            stat('paper.realized', wb.num(s.realized_pnl, 2), wb.signClass(s.realized_pnl)),
+            stat('paper.unrealized', wb.num(s.unrealized_pnl, 2), wb.signClass(s.unrealized_pnl)),
+            stat('paper.cycles', String(s.completed_cycles)),
+            stat('paper.fees', wb.num(s.fees_paid, 2)),
+            stat('paper.orders', String(s.open_orders))
+        ].forEach(function (n) { stats.appendChild(n); });
+        if (s.halt_reason) { say('error', wb.t('paper.haltedBecause') + ': ' + s.halt_reason); }
+
+        // ladder: highest price first, with the current price marked in between
+        const price = run.grid.price === null ? null : Number(run.grid.price);
+        const levels = run.grid.levels.slice().sort(function (a, b) { return Number(b.price) - Number(a.price); });
+        const ladder = wb.clear($('ladder'));
+        const head = wb.el('tr', {});
+        ['col.price', 'col.order'].forEach(function (h) { head.appendChild(wb.el('th', { text: wb.t(h) })); });
+        ladder.appendChild(wb.el('thead', {}, head));
+        const body = wb.el('tbody', {});
+        let marked = false;
+        levels.forEach(function (lv) {
+            if (!marked && price !== null && Number(lv.price) <= price) {
+                body.appendChild(wb.el('tr', { class: 'here' }, wb.el('td', { colspan: '2', text: wb.t('paper.here') + ': ' + wb.num(price, 4) })));
+                marked = true;
+            }
+            const cls = lv.order ? 'order-' + lv.order : '';
+            body.appendChild(wb.el('tr', { class: cls }, wb.el('td', { text: wb.num(lv.price, 4) }),
+                wb.el('td', { text: lv.order ? wb.t('side.' + lv.order) : '--' })));
         });
-        const data = await response.json();
-        runId = data.id;
-        
-        updateButtons('running');
-        connectWebSocket();
-    }
-
-    async function pausePaper() {
-        if (!runId) return;
-        await fetch(`/api/runs/${runId}/pause`, { method: 'POST' });
-        updateButtons('paused');
-    }
-
-    async function resumePaper() {
-        if (!runId) return;
-        await fetch(`/api/runs/${runId}/resume`, { method: 'POST' });
-        updateButtons('running');
-    }
-
-    async function stopPaper() {
-        if (!runId) return;
-        await fetch(`/api/runs/${runId}/stop`, { method: 'POST' });
-        updateButtons('stopped');
-        disconnectWebSocket();
-    }
-
-    async function killPaper() {
-        if (!runId) return;
-        if (!confirm('Kill switch will cancel ALL orders immediately. Continue?')) return;
-        await fetch(`/api/runs/${runId}/kill`, { method: 'POST' });
-        updateButtons('halted');
-        disconnectWebSocket();
-    }
-
-    function updateButtons(state) {
-        const btns = { start: 'start-btn', pause: 'pause-btn', resume: 'resume-btn', stop: 'stop-btn', kill: 'kill-btn' };
-        
-        document.getElementById(btns.start).disabled = state !== 'stopped' && state !== 'halted';
-        document.getElementById(btns.pause).disabled = state !== 'running';
-        document.getElementById(btns.resume).disabled = state !== 'paused';
-        document.getElementById(btns.resume).style.display = state === 'paused' ? 'inline-block' : 'none';
-        document.getElementById(btns.stop).disabled = state === 'stopped' || state === 'halted';
-        document.getElementById(btns.kill).disabled = state === 'stopped' || state === 'halted';
-
-        const statusEl = document.getElementById('run-status');
-        statusEl.textContent = state.toUpperCase();
-        statusEl.className = 'badge badge-' + (state === 'running' ? 'running' : state === 'paused' ? 'paused' : 'halted');
-    }
-
-    function connectWebSocket() {
-        if (!runId) return;
-        ws = new WebSocket(`ws://${location.host}/api/stream?run_id=${runId}`);
-        
-        ws.onopen = () => {
-            document.getElementById('connection-status').textContent = 'CONNECTED';
-            document.getElementById('connection-status').className = 'badge badge-running';
-        };
-        
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            handleWebSocketMessage(data);
-        };
-        
-        ws.onclose = () => {
-            document.getElementById('connection-status').textContent = 'DISCONNECTED';
-            document.getElementById('connection-status').className = 'badge badge-halted';
-            // Auto-reconnect
-            setTimeout(connectWebSocket, 5000);
-        };
-    }
-
-    function disconnectWebSocket() {
-        if (ws) {
-            ws.close();
-            ws = null;
+        if (!marked && price !== null) {
+            body.appendChild(wb.el('tr', { class: 'here' }, wb.el('td', { colspan: '2', text: wb.t('paper.here') + ': ' + wb.num(price, 4) })));
         }
+        ladder.appendChild(body);
+
+        table($('balances'), ['col.asset', 'col.free', 'col.locked', 'col.total'],
+            run.balances.map(function (b) { return [b.asset, wb.num(b.free, 4), wb.num(b.locked, 4), wb.num(b.total, 4)]; }));
+        table($('orders'), ['col.level', 'col.side', 'col.price', 'col.qty', 'col.filled'],
+            run.orders.map(function (o) { return [o.level === null ? '--' : o.level, side(o.side), wb.num(o.price, 4), wb.num(o.quantity, 4), wb.num(o.filled, 4)]; }));
+        table($('fills'), ['col.time', 'col.side', 'col.price', 'col.qty', 'col.fee'],
+            run.fills.slice(0, 20).map(function (f) { return [wb.time(f.time), side(f.side), wb.num(f.price, 4), wb.num(f.quantity, 4), wb.num(f.fee, 6) + ' ' + f.fee_asset]; }));
+        const events = wb.clear($('events'));
+        s.events.slice().reverse().forEach(function (e) { events.appendChild(wb.el('li', { text: e })); });
     }
 
-    function handleWebSocketMessage(data) {
-        switch(data.type) {
-            case 'price':
-                updatePrice(data.price);
-                break;
-            case 'fill':
-                updateFill(data);
-                break;
-            case 'order':
-                updateOrder(data);
-                break;
-            case 'pnl':
-                updatePnl(data);
-                break;
-            case 'status':
-                updateStatus(data);
-                break;
-        }
+    function setConn(on) {
+        wb.clear($('conn-badge')).appendChild(wb.el('span', { class: 'badge ' + (on ? 'on' : 'off'), text: wb.t(on ? 'paper.connected' : 'paper.disconnected') }));
     }
 
-    function updatePrice(price) {
-        document.getElementById('current-price').textContent = price.toLocaleString();
-        // Update chart with new candle
-    }
-
-    function updatePnl(pnl) {
-        document.getElementById('equity').textContent = pnl.equity.toLocaleString();
-        document.getElementById('realized-pnl').textContent = pnl.realized.toLocaleString();
-        document.getElementById('unrealized-pnl').textContent = pnl.unrealized.toLocaleString();
-        document.getElementById('fees-paid').textContent = pnl.fees.toLocaleString();
-    }
-
-    function updateStatus(status) {
-        document.getElementById('cycles-completed').textContent = status.cycles || 0;
-    }
-
-    function getConfigFromConfigurePage() {
-        // In real implementation, would fetch from localStorage or API
-        return {
-            exchange: { name: "wallex" },
-            market: { symbol: "USDTTMN" },
-            strategy: { grid: {
-                lower_price: "90.00",
-                upper_price: "110.00",
-                grid_count: 20,
-                mode: "arithmetic",
-                total_investment: "2000000.00"
-            }},
-            risk: { max_open_orders: 20, max_drawdown: "0.05", daily_loss_limit: "0.02" },
-            simulation: { initial_balance_quote: "2000000.00", fee_maker: "0.001", fee_taker: "0.002" },
-            logging: { level: "INFO", json: true }
+    function connect() {
+        if (!runId || finished) { return; }
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        socket = new WebSocket(proto + '://' + location.host + '/api/stream?run_id=' + encodeURIComponent(runId));
+        socket.onopen = function () { setConn(true); };
+        socket.onmessage = function (event) {
+            const message = JSON.parse(event.data);
+            render(message.run);
+            if (message.final) { finished = true; }
+        };
+        socket.onclose = function (event) {
+            setConn(false);
+            if (event.code === 4404) { forget(); return; }       // the server no longer knows this run
+            if (!finished) { setTimeout(connect, 2000); }          // transient: try again
         };
     }
 
-    // Initialize
-    document.addEventListener('DOMContentLoaded', () => {
-        initChart();
-        // Try to restore run_id from localStorage
-        runId = localStorage.getItem('paper_run_id');
-        if (runId) {
-            connectWebSocket();
-        }
+    function forget() {
+        wb.remove(wb.KEYS.paperRun); runId = null; finished = false;
+        $('live').style.display = 'none'; $('idle').style.display = '';
+        wb.clear($('state-badge')); setButtons('idle');
+    }
+
+    async function control(action) {
+        try {
+            await wb.post('/api/runs/' + runId + '/' + action);
+            const run = await wb.api('/api/runs/' + runId);
+            render(run);
+            say('', '');
+        } catch (e) { say('error', e.message); }
+    }
+
+    $('start').addEventListener('click', async function () {
+        say('', '');
+        try {
+            const config = await wb.config.current();
+            const started = await wb.post('/api/paper-runs', { config: config, feed: $('feed').value });
+            runId = started.id; finished = false;
+            wb.write(wb.KEYS.paperRun, runId);
+            connect();
+        } catch (e) { say('error', e.message); }
     });
+    $('pause').addEventListener('click', function () { control('pause'); });
+    $('resume').addEventListener('click', function () { control('resume'); });
+    $('stop').addEventListener('click', function () { control('stop'); });
+    $('kill').addEventListener('click', function () {
+        if (window.confirm(wb.t('paper.confirmKill'))) { control('kill'); }
+    });
+    document.addEventListener('wb:lang', function () { if (last) { render(last); } });
+
+    setButtons('idle');
+    setConn(false);
+    if (runId) {
+        wb.api('/api/runs/' + runId).then(function (run) {
+            render(run);
+            if (FINAL.indexOf(run.status.state) === -1) { connect(); } else { finished = true; }
+        }).catch(function () { forget(); });
+    }
+});
 </script>
 {% endblock %}

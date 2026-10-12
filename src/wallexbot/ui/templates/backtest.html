@@ -1,80 +1,116 @@
 {% extends "base.html" %}
-
 {% block content %}
+<h1 data-i18n="bt.title">Backtest</h1>
+<p class="lead" data-i18n="bt.intro"></p>
+
 <div class="card">
-    <h2>Backtest</h2>
-    <div class="badge badge-paper">PAPER MODE</div>
-
-    <form hx-post="/api/backtests" hx-target="#backtest-result" hx-swap="innerHTML" id="backtest-form">
-        <div class="grid">
-            <div class="form-group">
-                <label>Config</label>
-                <select name="config" required>
-                    <option value="default">Default (grid.example.yaml)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>From Date</label>
-                <input type="date" name="from" value="2024-01-01" required>
-            </div>
-            <div class="form-group">
-                <label>To Date</label>
-                <input type="date" name="to" value="2024-01-31" required>
-            </div>
-            <div class="form-group">
-                <label>Resolution</label>
-                <select name="resolution">
-                    <option value="60">1 Hour</option>
-                    <option value="240">4 Hours</option>
-                    <option value="1D">1 Day</option>
-                </select>
-            </div>
-        </div>
-        <button type="submit">Run Backtest</button>
-    </form>
-
-    <div id="backtest-result" class="card" style="margin-top: 1rem;"></div>
+    <h2 data-i18n="bt.config">Configuration used</h2>
+    <p id="config-summary" class="muted"></p>
+    <div class="form-grid">
+        <div><label for="from" data-i18n="bt.from">From</label><input id="from" type="date"></div>
+        <div><label for="to" data-i18n="bt.to">To</label><input id="to" type="date"></div>
+        <div><label for="resolution" data-i18n="bt.resolution">Candle size</label>
+            <select id="resolution">
+                <option value="1">1 min</option><option value="15">15 min</option>
+                <option value="60" selected>1 h</option><option value="240">4 h</option>
+                <option value="1D">1 day</option>
+            </select></div>
+    </div>
+    <div class="actions"><button id="run" type="button" data-i18n="bt.run">Run backtest</button></div>
+    <div id="status"></div>
 </div>
 
-<div class="card" style="margin-top: 1rem;">
-    <h3>Parameter Sweep</h3>
-    <form hx-post="/api/backtests/sweep" hx-target="#sweep-result" hx-swap="innerHTML" id="sweep-form">
-        <div class="grid">
-            <div class="form-group">
-                <label>Grid Count Range</label>
-                <input type="text" name="grid_count_range" value="10,20,30" placeholder="10,20,30">
-            </div>
-            <div class="form-group">
-                <label>Range % from Current</label>
-                <input type="text" name="range_pct_range" value="5,10,15" placeholder="5,10,15">
-            </div>
-            <div class="form-group">
-                <label>Mode</label>
-                <select name="mode">
-                    <option value="arithmetic">Arithmetic</option>
-                    <option value="geometric">Geometric</option>
-                </select>
-            </div>
-        </div>
-        <button type="submit">Run Sweep</button>
-    </form>
-
-    <div id="sweep-result" class="card" style="margin-top: 1rem;"></div>
-</div>
+<div id="output"></div>
+<p class="muted" data-i18n="bt.limits"></p>
 
 <script>
-    // Backtest form handler
-    document.getElementById('backtest-form').addEventListener('htmx:afterSwap', function(evt) {
-        if (evt.detail.target.id === 'backtest-result') {
-            renderBacktestChart();
-        }
-    });
+wb.ready.then(async function () {
+    const $ = function (id) { return document.getElementById(id); };
+    const day = 86400000;
+    function iso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+    $('to').value = iso(Date.now());
+    $('from').value = iso(Date.now() - 3 * day);
 
-    function renderBacktestChart() {
-        const chartDiv = document.getElementById('backtest-equity-chart');
-        if (!chartDiv) return;
-
-        // Chart would be rendered here with results
+    let config = await wb.config.current();
+    function summary() {
+        const g = config.strategy.grid;
+        $('config-summary').textContent = config.market.symbol + ': ' + wb.num(g.lower_price, 4) + ' - ' +
+            wb.num(g.upper_price, 4) + ', ' + g.grid_count + ' / fee ' + config.simulation.fee_maker + '+' + config.simulation.fee_taker;
     }
+    summary();
+
+    const ROWS = [
+        ['m.totalReturn', 'total_return_pct', 'pct', true], ['m.buyHold', 'buy_and_hold_return', 'pct', true],
+        ['m.outperf', 'outperformance', 'pct', true], ['m.realized', 'realized_pnl', 'num', true],
+        ['m.unrealized', 'unrealized_pnl', 'num', true], ['m.cycles', 'completed_cycles', 'int', false],
+        ['m.avgCycle', 'avg_profit_per_cycle', 'num', false], ['m.fees', 'fees_paid', 'num', false],
+        ['m.maxDd', 'max_drawdown', 'plain%', false], ['m.inRange', 'time_in_range', 'plain%', false],
+        ['m.rejected', 'rejected_orders', 'int', false]
+    ];
+
+    function curve(points) {
+        const values = points.map(Number);
+        const lo = Math.min.apply(null, values), hi = Math.max.apply(null, values), span = (hi - lo) || 1;
+        const coords = values.map(function (v, i) {
+            return (i / Math.max(values.length - 1, 1) * 300).toFixed(1) + ',' + (95 - (v - lo) / span * 90).toFixed(1);
+        }).join(' ');
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('class', 'curve'); svg.setAttribute('viewBox', '0 0 300 100'); svg.setAttribute('preserveAspectRatio', 'none');
+        const line = document.createElementNS(ns, 'polyline'); line.setAttribute('points', coords);
+        svg.appendChild(line);
+        return svg;
+    }
+
+    function show(result) {
+        const out = wb.clear($('output'));
+        const card = wb.el('div', { class: 'card' });
+        const table = wb.el('table', {});
+        ROWS.forEach(function (r) {
+            const raw = result.metrics[r[1]];
+            let text;
+            if (r[2] === 'pct') { text = wb.pct(raw); }
+            else if (r[2] === 'plain%') { text = wb.num(raw, 2) + '%'; }
+            else if (r[2] === 'int') { text = String(raw); }
+            else { text = wb.num(raw, 2); }
+            table.appendChild(wb.el('tr', {}, wb.el('td', { text: wb.t(r[0]) }),
+                wb.el('td', { class: r[3] ? wb.signClass(raw) : '', text: text })));
+        });
+        card.appendChild(table);
+        out.appendChild(card);
+        if (result.equity_curve && result.equity_curve.length > 1) {
+            out.appendChild(wb.el('div', { class: 'card' }, wb.el('h2', { text: wb.t('bt.curve') }), curve(result.equity_curve)));
+        }
+        if (result.events && result.events.length) {
+            const ul = wb.el('ul', { class: 'events' });
+            result.events.forEach(function (e) { ul.appendChild(wb.el('li', { text: e })); });
+            out.appendChild(wb.el('div', { class: 'card' }, wb.el('h2', { text: wb.t('bt.events') }), ul));
+        }
+    }
+
+    $('run').addEventListener('click', async function () {
+        const status = wb.clear($('status'));
+        wb.clear($('output'));
+        const from = Math.floor(new Date($('from').value + 'T00:00:00Z').getTime() / 1000);
+        const to = Math.floor(new Date($('to').value + 'T23:59:59Z').getTime() / 1000);
+        $('run').disabled = true;
+        status.appendChild(wb.el('p', { class: 'muted', text: wb.t('bt.running') }));
+        try {
+            const started = await wb.post('/api/backtests', { config: config, from_ts: from, to_ts: to, resolution: $('resolution').value });
+            let result;
+            do {
+                await new Promise(function (r) { setTimeout(r, 1000); });
+                result = await wb.api('/api/backtests/' + started.id);
+            } while (result.status === 'running');
+            wb.clear(status);
+            if (result.status === 'failed') {
+                status.appendChild(wb.el('div', { class: 'error', text: wb.t('bt.failed') + ': ' + result.error }));
+            } else { show(result); }
+        } catch (e) {
+            wb.clear(status);
+            status.appendChild(wb.el('div', { class: 'error', text: e.message }));
+        } finally { $('run').disabled = false; }
+    });
+});
 </script>
 {% endblock %}
