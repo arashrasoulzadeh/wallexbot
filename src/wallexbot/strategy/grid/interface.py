@@ -2,11 +2,11 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
 from wallexbot.domain.market import Market, OrderType, Side, Symbol
-from wallexbot.strategy.grid.parameters import GridParameters
+from wallexbot.strategy.grid.parameters import GridParameters, Level
 from wallexbot.strategy.grid.profit import ProfitTracker
 from wallexbot.strategy.grid.state import GridState
 
@@ -294,3 +294,75 @@ class GridStrategy:
             self.state.clear_active_order(level_index)
 
         return actions
+
+    # --- saving and restoring (crash recovery) ---------------------------------------
+
+    STATE_VERSION = 1
+    KEEP_CYCLES = 100  # recent cycle profits kept in a saved state
+
+    def export_state(self) -> dict[str, Any]:
+        """The strategy's full state as plain JSON types."""
+        state = self.state
+        tracker = self.profit_tracker
+        return {
+            "version": self.STATE_VERSION,
+            "grid_count": self.params.grid_count,
+            "seq": self._seq,
+            "started": state is not None,
+            "levels": []
+            if state is None
+            else [
+                {"index": lv.index, "price": str(lv.price), "side": lv.side} for lv in state.levels
+            ],
+            "active_orders": {}
+            if state is None
+            else {str(k): v for k, v in state.active_orders.items()},
+            "order_sides": {}
+            if state is None
+            else {str(k): v for k, v in state.order_sides.items()},
+            "order_qty": {}
+            if state is None
+            else {str(k): str(v) for k, v in state.order_qty.items()},
+            "filled_qty": {}
+            if state is None
+            else {str(k): str(v) for k, v in state.filled_qty.items()},
+            "filled_fee": {}
+            if state is None
+            else {str(k): str(v) for k, v in state.filled_fee.items()},
+            "profit": {
+                "cycles": tracker.total_cycles,
+                "total": str(tracker.total_profit),
+                "fees": str(tracker.total_fees_paid),
+                "recent": [str(p) for p in tracker.cycle_profits[-self.KEEP_CYCLES :]],
+            },
+        }
+
+    def import_state(self, saved: dict[str, Any]) -> None:
+        """Restore a saved state; refuses one that belongs to a different grid."""
+        if saved.get("version") != self.STATE_VERSION:
+            raise ValueError(f"unsupported strategy state version {saved.get('version')!r}")
+        if saved["grid_count"] != self.params.grid_count:
+            raise ValueError(
+                f"saved state is for a grid of {saved['grid_count']} levels, "
+                f"this strategy has {self.params.grid_count}"
+            )
+        self._seq = saved["seq"]
+        profit = saved["profit"]
+        self.profit_tracker.total_cycles = profit["cycles"]
+        self.profit_tracker.total_profit = Decimal(profit["total"])
+        self.profit_tracker.total_fees_paid = Decimal(profit["fees"])
+        self.profit_tracker.cycle_profits = [Decimal(p) for p in profit["recent"]]
+        if not saved["started"]:
+            self.state = None
+            return
+        levels = [
+            Level(index=lv["index"], price=Decimal(lv["price"]), side=lv["side"])
+            for lv in saved["levels"]
+        ]
+        state = GridState(levels=levels)
+        state.active_orders = {int(k): v for k, v in saved["active_orders"].items()}
+        state.order_sides = {int(k): v for k, v in saved["order_sides"].items()}
+        state.order_qty = {int(k): Decimal(v) for k, v in saved["order_qty"].items()}
+        state.filled_qty = {int(k): Decimal(v) for k, v in saved["filled_qty"].items()}
+        state.filled_fee = {int(k): Decimal(v) for k, v in saved["filled_fee"].items()}
+        self.state = state

@@ -26,3 +26,22 @@ class SystemClock:
 
     async def async_sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
+
+
+class ManualClock:
+    """A clock that only moves when told to: simulated time for backtests and replays."""
+
+    def __init__(self, start: float = 0.0) -> None:
+        self._time = start
+
+    def now(self) -> float:
+        return self._time
+
+    def sleep(self, seconds: float) -> None:
+        self._time += seconds
+
+    async def async_sleep(self, seconds: float) -> None:
+        self._time += seconds
+
+    def set_time(self, timestamp: float) -> None:
+        self._time = timestamp

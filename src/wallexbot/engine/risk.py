@@ -10,6 +10,7 @@ A limit is breached only when strictly exceeded, so an equity exactly at the lim
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 
 class RiskMonitor:
@@ -41,3 +42,12 @@ class RiskMonitor:
                 return f"daily loss {loss:.2%} exceeded the limit of {self.daily_loss_limit:.2%}"
 
         return None
+
+    def export_state(self) -> dict[str, Any]:
+        """The remembered peak and the day's baseline, so a restart keeps measuring from them."""
+        return {"peak": str(self._peak), "day": self._day, "day_start": str(self._day_start)}
+
+    def import_state(self, saved: dict[str, Any]) -> None:
+        self._peak = Decimal(saved["peak"])
+        self._day = saved["day"]
+        self._day_start = Decimal(saved["day_start"])

@@ -84,6 +84,13 @@ MIGRATIONS = [
     """
     CREATE INDEX IF NOT EXISTS idx_events_run_id ON events(run_id)
     """,
+    """
+    CREATE TABLE IF NOT EXISTS checkpoints (
+        run_id TEXT PRIMARY KEY REFERENCES runs(id),
+        data_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+    )
+    """,
 ]
 
 

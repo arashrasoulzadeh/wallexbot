@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
+from wallexbot.domain.clock import ManualClock
 from wallexbot.domain.order import Fill
 from wallexbot.engine.session import TradingSession
 from wallexbot.sim.exchange import SimulatedExchange
@@ -57,25 +58,6 @@ class BacktestResult:
     events: list[str] = field(default_factory=list)
 
 
-class _SimClock:
-    """Clock that only moves when the backtester sets it (simulated time)."""
-
-    def __init__(self) -> None:
-        self._time = 0.0
-
-    def now(self) -> float:
-        return self._time
-
-    def sleep(self, seconds: float) -> None:
-        self._time += seconds
-
-    async def async_sleep(self, seconds: float) -> None:
-        self._time += seconds
-
-    def set_time(self, timestamp: float) -> None:
-        self._time = timestamp
-
-
 class Backtester:
     """Runs a backtest of `strategy` on `exchange` over the ticks of `price_feed`."""
 
@@ -88,7 +70,7 @@ class Backtester:
         self.strategy = strategy
         self.exchange = exchange
         self.price_feed = price_feed
-        self._clock = _SimClock()
+        self._clock = ManualClock()
         self.exchange.use_clock(self._clock)  # rate limits run on simulated time
         self.session = TradingSession(strategy, exchange)
         self._last_price = Decimal(0)

@@ -55,6 +55,14 @@ class Repository(ABC):
     def get_grid_state(self, run_id: str) -> dict[str, Any] | None: ...
 
     @abstractmethod
+    def save_checkpoint(self, run_id: str, data: dict[str, Any]) -> None:
+        """Replace the run's recovery checkpoint (the full state needed to resume it)."""
+
+    @abstractmethod
+    def get_checkpoint(self, run_id: str) -> dict[str, Any] | None:
+        """The run's latest checkpoint, or None."""
+
+    @abstractmethod
     def save_event(self, run_id: str, event: dict[str, Any]) -> int: ...
 
     @abstractmethod
@@ -70,6 +78,7 @@ class InMemoryRepository(Repository):
         self._fills: dict[tuple[str, int], dict[str, Any]] = {}
         self._grid_states: dict[str, dict[str, Any]] = {}
         self._events: dict[str, list[dict[str, Any]]] = {}
+        self._checkpoints: dict[str, str] = {}
         self._run_counter = 0
         self._fill_counter = 0
         self._event_counter = 0
@@ -149,6 +158,17 @@ class InMemoryRepository(Repository):
 
     def get_grid_state(self, run_id: str) -> dict[str, Any] | None:
         return self._grid_states.get(run_id)
+
+    def save_checkpoint(self, run_id: str, data: dict[str, Any]) -> None:
+        import json
+
+        self._checkpoints[run_id] = json.dumps(data)  # stored as text, like the real database
+
+    def get_checkpoint(self, run_id: str) -> dict[str, Any] | None:
+        import json
+
+        raw = self._checkpoints.get(run_id)
+        return json.loads(raw) if raw is not None else None
 
     def save_event(self, run_id: str, event: dict[str, Any]) -> int:
         self._event_counter += 1
@@ -371,6 +391,24 @@ class SQLiteRepository(Repository):
 
             return {"levels": json.loads(row["levels_json"]), "updated_at": row["updated_at"]}
         return None
+
+    def save_checkpoint(self, run_id: str, data: dict[str, Any]) -> None:
+        import time
+
+        with self._transaction() as cursor:
+            cursor.execute(
+                "INSERT OR REPLACE INTO checkpoints (run_id, data_json, updated_at) VALUES (?, ?, ?)",
+                (run_id, json.dumps(data), int(time.time() * 1000)),
+            )
+
+    def get_checkpoint(self, run_id: str) -> dict[str, Any] | None:
+        cursor = self._db.cursor()
+        cursor.execute("SELECT data_json FROM checkpoints WHERE run_id = ?", (run_id,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        loaded: dict[str, Any] = json.loads(row[0])
+        return loaded
 
     def save_event(self, run_id: str, event: dict[str, Any]) -> int:
         import time

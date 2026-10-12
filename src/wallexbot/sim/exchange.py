@@ -2,11 +2,12 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import Any
 
 from wallexbot.domain import Clock, SystemClock
 from wallexbot.domain.balance import Balance
 from wallexbot.domain.fees import FeeSchedule, MinNotionalRule
-from wallexbot.domain.market import Market, OrderStatus, OrderType, Side
+from wallexbot.domain.market import Market, OrderStatus, OrderType, Side, Symbol
 from wallexbot.domain.money import quantize_down
 from wallexbot.domain.order import Fill, Order, OrderRequest
 from wallexbot.sim.matching import FillModel, MatchingEngine
@@ -27,6 +28,7 @@ class SimulatedExchange:
     )
     fill_model: FillModel = FillModel.CONSERVATIVE
     clock: Clock = field(default_factory=SystemClock)
+    retain_finished: int = 500  # how many finished orders stay queryable (older ones are dropped)
 
     # Internal fee schedule (set in __post_init__)
     _fee_schedule: FeeSchedule = field(init=False, repr=False)
@@ -246,6 +248,7 @@ class SimulatedExchange:
         now = int(self.clock.now() * 1000)
         object.__setattr__(order, "status", OrderStatus.CANCELED)
         object.__setattr__(order, "updated_at", now)
+        self._forget_finished([])
 
     def get_order(self, order_id: str) -> Order:
         """Get order by ID."""
@@ -289,6 +292,7 @@ class SimulatedExchange:
 
         # Stop-limit orders were fully funded when placed; triggering just activates them.
         self._matching_engine.check_stop_triggers(price)
+        self._forget_finished(fills)
 
         return fills
 
@@ -303,6 +307,91 @@ class SimulatedExchange:
         else:
             self._balances[base] = self._balance(base).unlock(fill.quantity).subtract(fill.quantity)
             self._balances[quote] = self._balance(quote).add(value - fill.fee)
+
+    def _forget_finished(self, fills: list[Fill]) -> None:
+        """Keep the matching engine to live orders and cap how many finished orders are retained."""
+        for fill in fills:
+            order = self._orders.get(fill.order_id)
+            if order is not None and not order.is_active:
+                self._matching_engine.remove_order(order.id)
+        finished = [oid for oid, o in self._orders.items() if not o.is_active]
+        for oid in finished[: max(0, len(finished) - self.retain_finished)]:
+            self._client_ids.discard(self._orders[oid].client_id)
+            del self._orders[oid]
+
+    # --- saving and restoring (crash recovery) ---------------------------------------
+
+    STATE_VERSION = 1
+
+    def export_state(self) -> dict[str, Any]:
+        """Everything needed to rebuild this exchange, as plain JSON types."""
+        if self._matching_engine._stop_orders:
+            raise ValueError("stop orders cannot be saved yet")
+        return {
+            "version": self.STATE_VERSION,
+            "order_sequence": self._order_sequence,
+            "trade_sequence": self._matching_engine._order_sequence,
+            "balances": {
+                asset: {"free": str(b.free), "locked": str(b.locked)}
+                for asset, b in self._balances.items()
+            },
+            "orders": [
+                {
+                    "id": o.id,
+                    "client_id": o.client_id,
+                    "symbol": str(o.symbol),
+                    "side": o.side.value,
+                    "type": o.type.value,
+                    "price": None if o.price is None else str(o.price),
+                    "quantity": str(o.quantity),
+                    "status": o.status.value,
+                    "filled_quantity": str(o.filled_quantity),
+                    "fee": str(o.fee),
+                    "fee_asset": o.fee_asset,
+                    "is_maker": o.is_maker,
+                    "created_at": o.created_at,
+                    "updated_at": o.updated_at,
+                }
+                for o in self._orders.values()
+            ],
+        }
+
+    def import_state(self, state: dict[str, Any]) -> None:
+        """Replace this exchange's state with a saved one (balances, orders, sequences)."""
+        if state.get("version") != self.STATE_VERSION:
+            raise ValueError(f"unsupported exchange state version {state.get('version')!r}")
+        self._balances = {
+            asset: Balance(free=Decimal(b["free"]), locked=Decimal(b["locked"]))
+            for asset, b in state["balances"].items()
+        }
+        self._matching_engine = MatchingEngine(
+            market=self.market, fee_schedule=self._fee_schedule, fill_model=self.fill_model
+        )
+        self._matching_engine._order_sequence = state["trade_sequence"]
+        self._order_sequence = state["order_sequence"]
+        self._orders = {}
+        self._client_ids = set()
+        for raw in state["orders"]:
+            order = Order(
+                id=raw["id"],
+                client_id=raw["client_id"],
+                symbol=Symbol(raw["symbol"]),
+                side=Side(raw["side"]),
+                type=OrderType(raw["type"]),
+                price=None if raw["price"] is None else Decimal(raw["price"]),
+                quantity=Decimal(raw["quantity"]),
+                status=OrderStatus(raw["status"]),
+                filled_quantity=Decimal(raw["filled_quantity"]),
+                fee=Decimal(raw["fee"]),
+                fee_asset=raw["fee_asset"],
+                is_maker=raw["is_maker"],
+                created_at=raw["created_at"],
+                updated_at=raw["updated_at"],
+            )
+            self._orders[order.id] = order
+            self._client_ids.add(order.client_id)
+            if order.is_active:
+                self._matching_engine.add_order(order)
 
     # Event stream for Phase 5.9
     def event_stream(self) -> None:

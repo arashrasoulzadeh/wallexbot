@@ -33,7 +33,9 @@ class ScriptedFeed:
         before_tick: Callable[[int], None] | None = None,
         then_raise: Exception | None = None,
         then_wait: asyncio.Event | None = None,
+        offset: int = 0,
     ):
+        self.offset = offset  # numbering of the first tick, for feeds that continue an earlier one
         self.prices = prices
         self.before_tick = before_tick
         self.then_raise = then_raise
@@ -47,7 +49,10 @@ class ScriptedFeed:
             if self.before_tick:
                 self.before_tick(i)
             yield PriceTick(
-                symbol=SYMBOL, price=D(p), timestamp=1_000_000 + i * 60_000, source="test"
+                symbol=SYMBOL,
+                price=D(p),
+                timestamp=1_000_000 + (i + self.offset) * 60_000,
+                source="test",
             )
         if self.then_raise:
             raise self.then_raise

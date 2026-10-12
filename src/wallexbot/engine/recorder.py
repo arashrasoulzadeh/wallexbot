@@ -28,6 +28,12 @@ class RunRecorder:
         self.run_id = self.repository.create_run(self.name, config)
         return self.run_id
 
+    def attach(self, run_id: str) -> str:
+        """Continue an existing (recovered) run instead of creating a new one."""
+        self.run_id = run_id
+        self.repository.update_run_status(run_id, "running")
+        return run_id
+
     def event(self, kind: str, message: str, level_index: int | None = None) -> None:
         self.repository.save_event(
             self.run_id,

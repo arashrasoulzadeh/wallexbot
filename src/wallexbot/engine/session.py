@@ -14,8 +14,9 @@ a live paper run behave identically:
 
 from collections import deque
 from decimal import ROUND_UP, Decimal
+from typing import Any
 
-from wallexbot.domain.market import OrderType, Side
+from wallexbot.domain.market import OrderType, Side, Symbol
 from wallexbot.domain.order import Fill, OrderRequest
 from wallexbot.sim.exchange import SimulatedExchange
 from wallexbot.sim.rate_limiter import RateLimitExceeded
@@ -35,11 +36,27 @@ UNLIMITED_VOLUME = Decimal("1000000000000")
 class TradingSession:
     """Drives one `GridStrategy` against one `SimulatedExchange`."""
 
-    def __init__(self, strategy: GridStrategy, exchange: SimulatedExchange) -> None:
+    STATE_VERSION = 1
+    RECENT_FILLS = 50  # newest fills kept in a saved state, for display
+
+    def __init__(
+        self,
+        strategy: GridStrategy,
+        exchange: SimulatedExchange,
+        keep_fills: int | None = None,
+        keep_events: int | None = None,
+    ) -> None:
+        """`keep_fills` / `keep_events` cap the in-memory history for runs that never end
+        (a backtest keeps everything: None)."""
         self.strategy = strategy
         self.exchange = exchange
+        self.keep_fills = keep_fills
+        self.keep_events = keep_events
         self.fills: list[Fill] = []
+        self.fill_count = 0  # every fill ever, even when old ones are dropped from `fills`
+        self.fill_rows: deque[dict[str, Any]] = deque(maxlen=self.RECENT_FILLS)
         self.events: list[str] = []
+        self.event_count = 0
         self.rejected = 0
         self.fees_quote = Decimal(0)  # all fees paid, valued in quote asset
         self._order_ids: dict[str, str] = {}  # strategy client_id -> exchange order id
@@ -50,6 +67,12 @@ class TradingSession:
     def deferred_count(self) -> int:
         """Orders waiting for the exchange's request-rate window to open."""
         return len(self._deferred)
+
+    def _event(self, message: str) -> None:
+        self.events.append(message)
+        self.event_count += 1
+        if self.keep_events is not None and len(self.events) > self.keep_events:
+            del self.events[: len(self.events) - self.keep_events]
 
     # --- lifecycle ------------------------------------------------------------------
 
@@ -67,7 +90,7 @@ class TradingSession:
         inside = self._in_range(price)
         if not inside and not self._out_of_range:
             params = self.strategy.params
-            self.events.append(
+            self._event(
                 f"price {price} left the grid range [{params.lower_price}, {params.upper_price}]"
             )
         self._out_of_range = not inside
@@ -94,6 +117,64 @@ class TradingSession:
         base = balances.get(market.base)
         return (quote.total if quote else Decimal(0)) + (base.total * price if base else Decimal(0))
 
+    # --- saving and restoring (crash recovery) ---------------------------------------
+
+    def export_state(self) -> dict[str, Any]:
+        """Exchange, strategy and session bookkeeping as plain JSON types."""
+        return {
+            "version": self.STATE_VERSION,
+            "exchange": self.exchange.export_state(),
+            "strategy": self.strategy.export_state(),
+            "fees_quote": str(self.fees_quote),
+            "rejected": self.rejected,
+            "fill_count": self.fill_count,
+            "fill_rows": list(self.fill_rows),
+            "event_count": self.event_count,
+            "events": self.events[-200:],
+            "out_of_range": self._out_of_range,
+            "order_ids": dict(self._order_ids),
+            "deferred": [
+                {
+                    "client_id": a.client_id,
+                    "symbol": str(a.symbol),
+                    "side": a.side.value,
+                    "price": str(a.price),
+                    "quantity": str(a.quantity),
+                    "level_index": a.level_index,
+                }
+                for a in self._deferred
+            ],
+        }
+
+    def import_state(self, saved: dict[str, Any]) -> None:
+        """Restore a saved state into this (fresh) session."""
+        if saved.get("version") != self.STATE_VERSION:
+            raise ValueError(f"unsupported session state version {saved.get('version')!r}")
+        self.strategy.import_state(saved["strategy"])  # checks the grid matches first
+        self.exchange.import_state(saved["exchange"])
+        self.fees_quote = Decimal(saved["fees_quote"])
+        self.rejected = saved["rejected"]
+        self.fill_count = saved["fill_count"]
+        self.fill_rows = deque(saved["fill_rows"], maxlen=self.RECENT_FILLS)
+        self.event_count = saved["event_count"]
+        self.events = list(saved["events"])
+        self._out_of_range = saved["out_of_range"]
+        self._order_ids = dict(saved["order_ids"])
+        self.fills = []
+        self._deferred = deque(
+            PlaceAction(
+                type="place",
+                client_id=d["client_id"],
+                symbol=Symbol(d["symbol"]),
+                side=Side(d["side"]),
+                order_type=OrderType.LIMIT,
+                price=Decimal(d["price"]),
+                quantity=Decimal(d["quantity"]),
+                level_index=d["level_index"],
+            )
+            for d in saved["deferred"]
+        )
+
     # --- actions --------------------------------------------------------------------
 
     def execute(self, actions: list[Action]) -> None:
@@ -104,9 +185,9 @@ class TradingSession:
             elif isinstance(action, CancelAction):
                 self._cancel(action)
             elif isinstance(action, PauseAction):
-                self.events.append(f"paused: {action.reason}")
+                self._event(f"paused: {action.reason}")
             elif isinstance(action, AlertAction):
-                self.events.append(f"{action.severity}: {action.message}")
+                self._event(f"{action.severity}: {action.message}")
 
     def _place(self, action: PlaceAction) -> bool:
         """Place one order. Returns False only when it was deferred by the rate limit."""
@@ -132,7 +213,7 @@ class TradingSession:
             # Not enough funds, below the minimum size...: the order never existed, so the
             # strategy must forget it, otherwise it would wait for a fill forever.
             self.rejected += 1
-            self.events.append(f"rejected {action.side.value} level {action.level_index}: {exc}")
+            self._event(f"rejected {action.side.value} level {action.level_index}: {exc}")
             self.strategy.on_cancel(action.level_index)
             return True
         self._order_ids[action.client_id] = order.id
@@ -163,8 +244,21 @@ class TradingSession:
     def _on_fills(self, fills: list[Fill]) -> None:
         for fill in fills:
             self.fills.append(fill)
+            if self.keep_fills is not None and len(self.fills) > self.keep_fills:
+                del self.fills[: len(self.fills) - self.keep_fills]
+            self.fill_count += 1
             self.fees_quote += self._fee_in_quote(fill)
             order = self.exchange.get_order(fill.order_id)
+            self.fill_rows.append(
+                {
+                    "time": fill.timestamp,
+                    "side": order.side.value,
+                    "price": str(fill.price),
+                    "quantity": str(fill.quantity),
+                    "fee": str(fill.fee),
+                    "fee_asset": fill.fee_asset,
+                }
+            )
             state = self.strategy.state
             level = state.get_level_for_order(order.client_id) if state else None
             if level is None:
@@ -202,6 +296,6 @@ class TradingSession:
         try:
             fill = self.exchange.instant_buy(price, gross)
         except ValueError as exc:
-            self.events.append(f"could not buy starting inventory: {exc}")
+            self._event(f"could not buy starting inventory: {exc}")
             return
         self.fees_quote += fill.fee * price
