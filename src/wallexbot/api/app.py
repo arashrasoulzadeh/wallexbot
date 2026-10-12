@@ -2,10 +2,11 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +14,17 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, ValidationError
 from starlette.websockets import WebSocketDisconnect
 
+from wallexbot.analytics.run_history import (
+    DEFAULT_TZ,
+    daily_breakdown,
+    downsample,
+    fills_csv,
+    filter_range,
+    parse_snapshots,
+    run_summary,
+    snapshots_csv,
+    valid_timezone,
+)
 from wallexbot.api.manager import InvalidRunState, RunManager, UnknownRun
 from wallexbot.config.defaults import default_config
 from wallexbot.config.schema import validate_config
@@ -26,6 +38,17 @@ FINAL_STATES = ("stopped", "halted", "failed")
 def _validation_errors(error: ValidationError) -> list[dict[str, Any]]:
     """Pydantic errors without the exception objects in `ctx`, so they serialize to JSON."""
     return [{"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]} for e in error.errors()]
+
+
+def _jsonable(value: Any) -> Any:
+    """Decimals as strings (exact), recursively, so nothing is rounded on the way out."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    return value
 
 
 def _repo_summary(run: dict[str, Any]) -> dict[str, Any]:
@@ -204,6 +227,95 @@ def create_app(
         _stored_run(run_id)
         state = repo.get_grid_state(run_id)
         return state or {"levels": []}
+
+    # History -----------------------------------------------------------------------
+
+    def _history_run(run_id: str) -> dict[str, Any]:
+        """The stored run as a summary dict (live state wins over the stored status)."""
+        run = repo.get_run(run_id)
+        if not run:
+            raise HTTPException(404, "Run not found")
+        base = _repo_summary(run)
+        live = _live_or_none(run_id)
+        if live is not None:
+            base["status"] = live["status"]["state"]
+        return base
+
+    @app.get("/api/history/runs")
+    async def history_runs() -> Any:
+        rows = []
+        for run in repo.list_runs():
+            base = _history_run(run["id"])
+            points = parse_snapshots(repo.get_snapshots(run["id"]))
+            rows.append(run_summary(base, points, repo.get_fills(run["id"])))
+        rows.sort(key=lambda r: r["started_at"], reverse=True)
+        return _jsonable(rows)
+
+    @app.get("/api/history/runs/{run_id}")
+    async def history_run(
+        run_id: str,
+        since: int | None = None,
+        until: int | None = None,
+        max_points: int = Query(600, ge=1, le=5000),
+        fills_limit: int = Query(500, ge=1, le=5000),
+        side: Literal["BUY", "SELL"] | None = None,
+        tz: str = DEFAULT_TZ,
+    ) -> Any:
+        """One run's history for the History page, limited to a time range (milliseconds)."""
+        if not valid_timezone(tz):
+            raise HTTPException(422, f"unknown time zone {tz!r}")
+        base = _history_run(run_id)
+        points = parse_snapshots(repo.get_snapshots(run_id, since, until))
+        all_fills = [
+            f
+            for f in repo.get_fills(run_id)
+            if (since is None or f["timestamp"] >= since)
+            and (until is None or f["timestamp"] <= until)
+        ]
+        shown = [f for f in all_fills if side is None or f.get("side") == side]
+        events = repo.get_events(run_id)[-200:]
+        return _jsonable(
+            {
+                "summary": run_summary(base, points, all_fills),
+                "series": [
+                    {"ts": p.ts, "price": p.price, "equity": p.equity, "realized": p.realized}
+                    for p in downsample(points, max_points)
+                ],
+                "daily": daily_breakdown(points, all_fills, tz),
+                "fills": list(reversed(shown))[:fills_limit],
+                "events": list(reversed(events)),
+                "tz": tz,
+                "range": {"since": since, "until": until},
+            }
+        )
+
+    def _csv(name: str, text: str) -> Response:
+        return Response(
+            content=text,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
+
+    @app.get("/api/history/runs/{run_id}/fills.csv")
+    async def history_fills_csv(
+        run_id: str, since: int | None = None, until: int | None = None
+    ) -> Response:
+        _history_run(run_id)
+        fills = [
+            f
+            for f in repo.get_fills(run_id)
+            if (since is None or f["timestamp"] >= since)
+            and (until is None or f["timestamp"] <= until)
+        ]
+        return _csv(f"{run_id}_fills.csv", fills_csv(fills))
+
+    @app.get("/api/history/runs/{run_id}/snapshots.csv")
+    async def history_snapshots_csv(
+        run_id: str, since: int | None = None, until: int | None = None
+    ) -> Response:
+        _history_run(run_id)
+        points = filter_range(parse_snapshots(repo.get_snapshots(run_id)), since, until)
+        return _csv(f"{run_id}_history.csv", snapshots_csv(points))
 
     # Config ------------------------------------------------------------------------
 

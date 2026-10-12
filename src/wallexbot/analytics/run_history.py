@@ -86,6 +86,15 @@ def _zone(name: str) -> tzinfo:
         return _FALLBACK_ZONES.get(name, UTC)
 
 
+def valid_timezone(name: str) -> bool:
+    """Whether `name` is a time zone we can cut days with."""
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return name in _FALLBACK_ZONES
+    return True
+
+
 def local_day(ts_ms: int, tz: str = DEFAULT_TZ) -> str:
     """The calendar day (YYYY-MM-DD) of a timestamp in the given time zone."""
     return datetime.fromtimestamp(ts_ms / 1000, tz=_zone(tz)).strftime("%Y-%m-%d")
