@@ -3,12 +3,14 @@
 import argparse
 import asyncio
 import logging
+import os
 import sys
 import time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from wallexbot.alerts.setup import notifier_from_env
 from wallexbot.analytics.backtest import Backtester
 from wallexbot.analytics.replay import candles_to_ticks
 from wallexbot.analytics.report import (
@@ -370,6 +372,21 @@ async def _run_paper(
     engine: BotEngine, price_feed: Any, duration: float | None, every: float
 ) -> None:
     """Run the engine, printing a status line periodically, until it ends or time is up."""
+    notifier = notifier_from_env(os.environ)
+    alert_tasks: set[asyncio.Task[None]] = set()
+    if notifier is not None:
+        await notifier.start()
+        symbol = str(engine.config.exchange.market_info().symbol)
+
+        def alert(kind: str, text: str) -> None:
+            assert notifier is not None
+            message = f"{symbol}: {kind.replace('_', ' ')} - {text}"
+            task = asyncio.get_running_loop().create_task(notifier.send(message, "warning"))
+            alert_tasks.add(task)
+            task.add_done_callback(alert_tasks.discard)
+
+        engine.config.on_alert = alert
+        print("Telegram alerts are on.")
     task = engine.start()
     elapsed = 0.0
     try:
@@ -386,6 +403,9 @@ async def _run_paper(
         closer = getattr(price_feed, "close", None)
         if closer is not None:  # same loop the feed ran in: its tasks and queues belong to it
             await closer()
+        if notifier is not None:
+            await asyncio.gather(*alert_tasks, return_exceptions=True)
+            await notifier.stop()
     if task.done() and not task.cancelled() and task.exception() is not None:
         raise task.exception()  # type: ignore[misc]
 

@@ -30,8 +30,8 @@ def test_precisions_come_from_the_real_market_not_from_the_config():
 
 def test_values_from_the_config_end_up_in_the_right_places():
     setup = make_setup()
-    assert setup.params.grid_count == 6 and setup.params.lower_price == D("261000")
-    assert (setup.maker, setup.taker) == (D("0.0005"), D("0.001"))
+    assert setup.params.grid_count == 5 and setup.params.lower_price == D("255000")
+    assert (setup.maker, setup.taker) == (D("0.0035"), D("0.0035"))
     assert setup.risk.max_drawdown == D("0.05") and setup.risk.daily_loss_limit == D("0.02")
 
 

@@ -115,7 +115,7 @@ Every Wallex spot market (373 at the last check, TMN- and USDT-quoted) can be us
   break-even (round trip x 1.5). With a 0.35 % fee that means levels about 1.2-1.5 % apart, so the grid trades far less
   often than the old 0.45 % spacing did, but a cycle really earns money. When the week's candles are available,
   busier coins get wider spacing (about three-quarters of the usual hourly high-low span, at most 3 %). The generic
-  example config (`config/grid.example.yaml`) still has the 0.05 % / 0.10 % placeholder fees and a 0.45 % grid.
+  example config (`config/grid.example.yaml`) uses the same 0.35 % fee and a 255,000-275,000 grid of 5 levels.
 - The minimum order shown is Wallex's OTC minimum, used as a hint; the real spot minimum and fee tier are still
   unknown (placeholders: maker 0.0005, taker 0.001, 90,000 TMN).
 - Tests run the defaults for all 373 recorded markets and start paper runs from them

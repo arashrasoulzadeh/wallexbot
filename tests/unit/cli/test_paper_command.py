@@ -122,3 +122,34 @@ def test_invalid_config_is_an_error(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(cli, "make_rest_client", lambda: FakeClient())
     assert main(["paper", str(bad)]) == 1
     assert "error" in capsys.readouterr().out.lower()
+
+
+class FakeNotifier:
+    chat_id = "42"
+
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self.started = self.stopped = False
+
+    async def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+    async def send(self, message: str, severity: str = "info") -> None:
+        self.sent.append(message)
+
+
+def test_a_cli_run_tells_telegram_when_the_price_leaves_the_range(run_paper, monkeypatch):
+    fake = FakeNotifier()
+    monkeypatch.setattr(cli, "notifier_from_env", lambda env: fake)
+    code, _ = run_paper([264000, 290000, 291000])
+    assert code == 0 and fake.started and fake.stopped
+    assert len(fake.sent) == 1 and "USDTTMN" in fake.sent[0] and "out of range" in fake.sent[0]
+
+
+def test_a_cli_run_without_telegram_just_runs(run_paper, monkeypatch):
+    monkeypatch.setattr(cli, "notifier_from_env", lambda env: None)
+    code, out = run_paper([264000, 290000])
+    assert code == 0 and "Paper trading USDTTMN" in out

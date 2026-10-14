@@ -69,7 +69,7 @@ def test_a_started_paper_run_shows_up_with_live_data(client):
     pnl = client.get(f"/api/runs/{run_id}/pnl").json()
     assert set(pnl) >= {"realized", "unrealized", "total", "fees"}
     grid = client.get(f"/api/runs/{run_id}/grid").json()
-    assert len(grid["levels"]) == 6 and grid["lower"] == "261000"
+    assert len(grid["levels"]) == 5 and grid["lower"] == "255000"
 
 
 def test_pause_resume_stop_through_the_api(client):
@@ -209,7 +209,7 @@ def test_recovering_continues_the_same_run(recovery_client):
     run = wait_for(
         lambda: (
             (j := recovery_client.get(f"/api/runs/{run_id}").json())["status"]["ticks_processed"]
-            >= 6
+            >= 5  # 3 ticks in the last checkpoint (nothing crossed a level since) + 2 live ones
             and j
         )
     )
@@ -306,8 +306,8 @@ def test_market_status_describes_the_price_the_grid_and_the_book(client):
 
     assert body["symbol"] == "USDTTMN" and body["price"] == "262154"
     grid = body["grid"]
-    assert grid["state"] == "inside" and grid["levels"] == 6 and grid["lower"] == "261000"
-    assert grid["next_buy"]["price"] == "261000" and grid["next_sell"]["price"] == "262200"
+    assert grid["state"] == "inside" and grid["levels"] == 5 and grid["lower"] == "255000"
+    assert grid["next_buy"]["price"] == "260000" and grid["next_sell"]["price"] == "265000"
     assert body["depth"]["best_bid"] == "262100" and body["depth"]["best_ask"] == "262200"
     assert body["depth"]["bid_share_pct"] is not None
     assert body["trend"]["label"] in ("sideways", "up", "down", "unclear")

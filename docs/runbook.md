@@ -36,7 +36,7 @@ wallexbot ui
 The token is read from the environment only; it is never written to a file, the database or the UI. You get a message when
 a run is halted (kill switch or risk limit), fails with an error, or the price leaves the grid range (once per exit).
 The **Settings** page shows whether Telegram is set up and has a "send a test message" button. Alerts cover runs started
-from the dashboard (new or recovered); the CLI `paper` command does not send them yet.
+from the dashboard (new or recovered) and `wallexbot paper`, which prints "Telegram alerts are on." when the variables are set.
 
 The **History** page shows past runs (see [paper-trading.md](paper-trading.md#history)). The **Settings** page shows the mode (paper only), Telegram status and the fees assumed for new coins.
 

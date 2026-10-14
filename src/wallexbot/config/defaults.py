@@ -1,7 +1,7 @@
 """Default configuration shown by the UI.
 
-Mirrors config/grid.example.yaml (a test keeps the two in sync). The fee and minimum-order values
-are placeholders: the real Wallex fee tier and spot minimum are not public.
+Mirrors config/grid.example.yaml (a test keeps the two in sync). The fee is the highest published
+Wallex tier (a worst case) and the minimum order is a placeholder: the real values are not public.
 """
 
 import copy
@@ -16,9 +16,9 @@ _DEFAULT: dict[str, Any] = {
     "market": {"symbol": "USDTTMN"},
     "strategy": {
         "grid": {
-            "lower_price": "261000",
-            "upper_price": "267000",
-            "grid_count": 6,
+            "lower_price": "255000",
+            "upper_price": "275000",
+            "grid_count": 5,
             "mode": "arithmetic",
             "total_investment": "2000000",
         }
@@ -33,8 +33,8 @@ _DEFAULT: dict[str, Any] = {
     "simulation": {
         "initial_balance_quote": "2000000",
         "initial_balance_base": "0.00",
-        "fee_maker": "0.0005",
-        "fee_taker": "0.001",
+        "fee_maker": "0.0035",
+        "fee_taker": "0.0035",
         "min_notional": "90000",
         "min_quantity": "0.01",
         "fill_model": "conservative",
