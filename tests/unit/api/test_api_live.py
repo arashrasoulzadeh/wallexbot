@@ -468,3 +468,37 @@ def test_week_overview_for_a_coin(coins_client):
     assert body["symbol"] == "USDTTMN" and body["hours"] == 40
     assert {"high", "low", "range_pct", "avg_hour_range_pct", "max_hour_range_pct"} <= set(body)
     assert coins_client.get("/api/markets/NOPEUSDT/week").status_code == 404
+
+
+# --- error paths of the market endpoints -----------------------------------------------------
+
+
+class _BrokenClient(FakeClient):
+    def get_markets(self):
+        raise OSError("Wallex is unreachable")
+
+
+def test_market_endpoints_answer_502_when_wallex_is_unreachable():
+    repo = InMemoryRepository()
+    manager = RunManager(repo, client_factory=lambda: _BrokenClient())
+    with TestClient(create_app(repo=repo, engine_manager=manager)) as c:
+        for path in ("/api/markets", "/api/markets/USDTTMN/defaults", "/api/markets/USDTTMN/week"):
+            r = c.get(path)
+            assert r.status_code == 502 and "unreachable" in r.json()["detail"], path
+
+
+def test_a_backtest_needs_its_start_before_its_end(client):
+    config = client.get("/api/config/default").json()
+    r = client.post("/api/backtests", json={"config": config, "from_ts": 200, "to_ts": 100})
+    assert r.status_code == 422 and "before" in r.json()["detail"]
+
+
+def test_the_app_works_with_its_own_default_repository():
+    with TestClient(create_app()) as c:
+        assert c.get("/api/health").json() == {"status": "ok"}
+        assert c.get("/api/runs").json() == []
+
+
+def test_the_removed_admin_endpoints_stay_removed(client):
+    for path in ("/api/admin/backup", "/api/admin/vacuum", "/api/admin/backup-history"):
+        assert client.post(path).status_code == 404

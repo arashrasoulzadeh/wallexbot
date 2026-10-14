@@ -37,7 +37,7 @@ field names, paths and frame shapes, tested only against matching mocks) and are
 2. ~~Engine is unfinished~~ **fixed** (docs/paper-trading.md). Crash recovery now exists (see the progress table). Remaining: no fill inference from polling (the simulator reports fills directly); WebSocket gaps during a live run are not resynced.
    The web UI is now wired to the engine (see the progress table).
 3. **Simulator has no market orders**: MARKET and STOP_MARKET are now rejected with a clear error (they used to be accepted and never fill); the 2% price-move cancel rule (5.4.4) is still missing.
-4. ~~History API is stubs~~ **built** on the main repository (the old `analytics/history.py` / `analytics/api.py` stubs are superseded and unused; they can be deleted). The Settings page is not implemented and not linked. Previously: the history tables from Phase 14 (ticks, trades, candles, balance and PnL snapshots, grid cycles) are not in the schema; `/api/stream` only echoes.
+4. ~~History API is stubs~~ **built** on the main repository (the old `analytics/history.py` / `analytics/api.py` stubs were deleted). The Settings page is built. Previously: the history tables from Phase 14 (ticks, trades, candles, balance and PnL snapshots, grid cycles) are not in the schema; `/api/stream` only echoes.
 5. **WebSocket**: no gap resync after reconnect (6.4.5), no 50-messages-per-channel guard (6.4.6); `PriceFeed` for live WebSocket data is not wired to the engine.
 6. **Coverage 81.8%** vs 90% gate; weakest: `analytics/history.py`, `analytics/api.py`, `engine/actions.py`, `strategy/grid/sizing.py`, `sim/rate_limiter.py`.
 7. **Placeholder tests**: several remaining tests are `pass` or only check `hasattr` (`test_indicators.py::TestOptimizer`, `TestHistoricalDataStore`, parts of the engine/anomaly tests).
@@ -127,3 +127,16 @@ Items that look genuinely present: pure grid level generation/sizing/placement, 
 - **Live data differs from the recorded fixture:** the markets feed now has `quote_volume_24h` for no spot market, so
   the list cannot be sorted by turnover; my first version sorted by it and showed zeros until the browser check caught it.
 - Still unknown: real spot minimum order and fee tier (D16/D17); the OTC minimum is only a hint.
+
+### Cleanup and coverage (2026-10-14)
+
+- Coverage is above the 90 % gate (about 91 %). New tests: the `suggest` / `optimize` / `regime` commands, the optimizer's
+  walk-forward and Monte Carlo functions, the adaptive decisions, repository order/grid-state parity, API error paths.
+  The empty `pass` tests for the adaptive module and optimizer were removed or replaced with real ones.
+- **Bug fixed:** `suggest` and `regime` asked Wallex for candles from timestamp 0 to 0 (no data on the live API); they now
+  use the last 14 days.
+- **Bug fixed:** a SQLite run id was a millisecond timestamp plus a config hash, so two runs with the same config started in
+  the same millisecond collided; ids now carry a random tail.
+- **Removed:** the unauthenticated `/api/admin/backup|vacuum|backup-history` endpoints (unused; they touched files in the
+  current directory, not the database in use) and the old unused `analytics/history.py` and `analytics/api.py`.
+- **Added:** Telegram alerts (env-configured, off by default) and the Settings page; defaults now assume worst-case fees.

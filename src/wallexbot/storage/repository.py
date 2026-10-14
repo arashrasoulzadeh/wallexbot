@@ -246,10 +246,12 @@ class SQLiteRepository(Repository):
     def create_run(self, name: str, config: dict[str, Any]) -> str:
         import hashlib
         import time
+        import uuid
 
         config_json = json.dumps(config, sort_keys=True)
         config_hash = hashlib.sha256(config_json.encode()).hexdigest()[:16]
-        run_id = f"run_{int(time.time() * 1000)}_{config_hash}"
+        # the random tail keeps two runs with the same config in the same millisecond apart
+        run_id = f"run_{int(time.time() * 1000)}_{config_hash}_{uuid.uuid4().hex[:6]}"
 
         with self._transaction() as cursor:
             cursor.execute(

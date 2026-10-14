@@ -543,45 +543,6 @@ def create_app(
             "fees": {q: str(f) for q, f in WORST_CASE_FEE.items()},
         }
 
-    # Admin endpoints
-    @app.post("/api/admin/backup")
-    async def backup_database() -> Any:
-        import shutil
-        import time
-
-        src = "wallexbot.db"
-        dst = f"wallexbot.db.backup.{int(time.time())}"
-        try:
-            shutil.copy2(src, dst)
-            return {"message": f"Backup created: {dst}"}
-        except Exception as e:
-            return {"message": f"Backup failed: {e}"}
-
-    @app.post("/api/admin/vacuum")
-    async def vacuum_database() -> Any:
-        import sqlite3
-
-        try:
-            conn = sqlite3.connect("wallexbot.db")
-            conn.execute("VACUUM")
-            conn.close()
-            return {"message": "Database vacuumed"}
-        except Exception as e:
-            return {"message": f"Vacuum failed: {e}"}
-
-    @app.post("/api/admin/backup-history")
-    async def backup_history() -> Any:
-        import shutil
-        import time
-
-        src = "wallexbot_history.db"
-        dst = f"wallexbot_history.db.backup.{int(time.time())}"
-        try:
-            shutil.copy2(src, dst)
-            return {"message": f"History backup created: {dst}"}
-        except Exception as e:
-            return {"message": f"Backup failed: {e}"}
-
     # Live updates ------------------------------------------------------------------
 
     @app.websocket("/api/stream")

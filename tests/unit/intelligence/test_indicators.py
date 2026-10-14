@@ -149,46 +149,6 @@ class TestSmartGrid:
         assert hasattr(decision, "regime")
 
 
-class TestAdaptive:
-    """Tests for adaptive behavior."""
-
-    def test_recenter_grid(self):
-        """Re-center grid when out of range."""
-        pass
-
-    def test_dynamic_spacing(self):
-        """Dynamic spacing adjusts with volatility."""
-        pass
-
-    def test_trend_guard(self):
-        """Trend guard pauses buys in strong trend."""
-        pass
-
-    def test_anomaly_guard(self):
-        """Anomaly guard halts on anomalies."""
-        pass
-
-
-class TestOptimizer:
-    """Tests for parameter optimizer."""
-
-    def test_grid_search(self):
-        """Grid search optimizer."""
-        pass
-
-    def test_random_search(self):
-        """Random search optimizer."""
-        pass
-
-    def test_walk_forward(self):
-        """Walk-forward validation."""
-        pass
-
-    def test_monte_carlo(self):
-        """Monte Carlo robustness."""
-        pass
-
-
 class TestProperties:
     """Property-based tests."""
 

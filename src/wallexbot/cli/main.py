@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -530,6 +531,15 @@ def cmd_ui(host: str, port: int, allow_remote: bool = False, db: str | None = No
     return 0
 
 
+ANALYSIS_DAYS = 14  # how much hourly history `suggest` and `regime` look at
+
+
+def _recent_window(days: int = ANALYSIS_DAYS) -> tuple[int, int]:
+    """(start, end) in UTC seconds covering the last `days` days."""
+    end = int(time.time())
+    return end - days * 86400, end
+
+
 def cmd_suggest(market: str, capital: str) -> int:
     """Get intelligent grid suggestions."""
 
@@ -543,7 +553,8 @@ def cmd_suggest(market: str, capital: str) -> int:
     print(f"Analyzing {market} with {capital} capital...")
 
     client = WallexRestClient()
-    candles = client.get_candles(market, "60", 0, 0)  # Get recent candles
+    start, end = _recent_window()
+    candles = client.get_candles(market, "60", start, end)  # Get recent candles
 
     if not candles:
         print("No candle data available")
@@ -642,7 +653,8 @@ def cmd_regime(market: str, period: int) -> int:
     print(f"Analyzing regime for {market} (period={period})...")
 
     client = WallexRestClient()
-    candles = client.get_candles(market, "60", 0, 0)
+    start, end = _recent_window()
+    candles = client.get_candles(market, "60", start, end)
 
     if not candles:
         print("No candle data available")
