@@ -59,6 +59,8 @@ class GridStrategyConfig(BaseModel):
     per_grid_qty: str | None = None
     stop_loss_price: str | None = None
     take_profit_price: str | None = None
+    # paper only: move the grid to the price after it has stayed outside the range this long
+    recenter_after_minutes: int | None = Field(default=None, ge=1)
 
     # Derived values (computed after validation)
     spacing: Decimal | None = Field(default=None, exclude=True)

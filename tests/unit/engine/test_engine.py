@@ -70,6 +70,8 @@ def make_engine(
     cancel_on_shutdown=True,
     repository=None,
     on_alert=None,
+    recenter_after_minutes=None,
+    app_config=None,
 ):
     clock = FakeClock()
     exchange = SimulatedExchange(
@@ -98,6 +100,8 @@ def make_engine(
             cancel_on_shutdown=cancel_on_shutdown,
             repository=repository,
             on_alert=on_alert,
+            recenter_after_minutes=recenter_after_minutes,
+            app_config=app_config,
         )
     )
     return engine, exchange, clock

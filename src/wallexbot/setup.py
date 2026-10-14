@@ -44,6 +44,7 @@ class GridSetup:
     initial_quote: Decimal
     initial_base: Decimal
     app_config: dict[str, Any]  # the validated config as plain JSON, saved with checkpoints
+    recenter_after_minutes: int | None = None
 
     @classmethod
     def from_config(cls, config: Config, info: WallexMarket) -> "GridSetup":
@@ -84,6 +85,7 @@ class GridSetup:
             initial_quote=Decimal(sim.initial_balance_quote),
             initial_base=Decimal(sim.initial_balance_base),
             app_config=config.model_dump(mode="json", by_alias=True),
+            recenter_after_minutes=grid.recenter_after_minutes,
         )
 
     def new_exchange(self) -> SimulatedExchange:

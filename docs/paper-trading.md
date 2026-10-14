@@ -88,6 +88,24 @@ show their stored record.
 `POST /api/runs/{id}/recover` continues an interrupted run (404 unknown, 409 if it is already live or
 finished).
 
+## Auto re-centering (optional)
+
+By default a grid is fixed: when the price leaves its range the run pauses and says so (and alerts you on Telegram).
+Set `recenter_after_minutes` (Configure page: "Move the grid after (minutes)", or `strategy.grid.recenter_after_minutes`
+in the YAML) and, once the price has stayed outside the range that long, the engine cancels the resting orders and builds
+a grid of the same width and level count around the current price.
+
+- Nothing is sold to do it. Coins already held fund the new sell orders and only a shortfall is bought (as a simulated
+  taker, like at the start). Profit totals, cycle counts and order numbering carry on; the new grid's order ids carry a
+  generation tag so they never collide with the cancelled ones.
+- At most one move per hour, so a coin that keeps running away is not chased every minute. Coming back inside the range
+  resets the wait.
+- The stored run config is updated with the new range, so a crash recovers into the grid that was live, not the original
+  one (tested end to end). The risk limits (max drawdown, daily loss) keep working on the whole run.
+- It does not realise the loss on coins bought higher: moving the grid up after a rise leaves you holding them, and moving
+  it down after a fall means the new sells sit below your cost. That is the nature of re-centering; watch the drawdown.
+- Paper only, off by default; an alert of kind `recentered` is sent to Telegram when it happens.
+
 ## All Wallex coins
 
 Every Wallex spot market (373 at the last check, TMN- and USDT-quoted) can be used, not only USDTTMN.

@@ -46,6 +46,7 @@ def place_initial_grid(
     params: GridParameters,
     fee_schedule: FeeSchedule,
     min_notional_rule: MinNotionalRule,
+    generation: int = 0,
 ) -> InitialPlacement:
     """
     Place initial grid orders based on current price.
@@ -75,7 +76,11 @@ def place_initial_grid(
         if qty <= 0:
             continue
 
-        client_id = f"GRID_INIT_{level.index}_1"
+        client_id = (
+            f"GRID_INIT_{level.index}_1"
+            if generation == 0
+            else f"GRID_G{generation}_INIT_{level.index}_1"
+        )
         order = PlaceAction(
             type="place",
             client_id=client_id,

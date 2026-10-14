@@ -51,6 +51,7 @@ def rebuild_engine(
             repository=repo,
             run_name=f"paper-{symbol}",
             app_config=raw,
+            recenter_after_minutes=setup.recenter_after_minutes,
         )
     )
     engine.restore(run_id)

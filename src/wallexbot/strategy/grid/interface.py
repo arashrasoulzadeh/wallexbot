@@ -89,10 +89,18 @@ class GridStrategy:
             min_notional=Decimal("10.00"), min_quantity=Decimal("0.0001")
         )
         self.run_id = run_id
+        self.generation = 0  # grows each time the grid is re-centered, so order ids stay unique
         self.state: GridState | None = None
         self.profit_tracker = ProfitTracker()
         self._clock = None
         self._seq = 0
+
+    def adopt(self, previous: "GridStrategy") -> None:
+        """Carry the profit totals, order numbering and clock over from the grid this one replaces."""
+        self.profit_tracker = previous.profit_tracker
+        self._seq = previous._seq
+        self._clock = previous._clock
+        self.generation = previous.generation + 1
 
     def on_start(self, current_price: Decimal, timestamp: int = 0) -> list[Action]:
         """Initialize grid on start."""
@@ -120,6 +128,7 @@ class GridStrategy:
             params=self.params,
             fee_schedule=fee_schedule,
             min_notional_rule=min_notional,
+            generation=self.generation,
         )
 
         # Initialize state
@@ -308,6 +317,7 @@ class GridStrategy:
             "version": self.STATE_VERSION,
             "grid_count": self.params.grid_count,
             "seq": self._seq,
+            "generation": self.generation,
             "started": state is not None,
             "levels": []
             if state is None
@@ -347,6 +357,7 @@ class GridStrategy:
                 f"this strategy has {self.params.grid_count}"
             )
         self._seq = saved["seq"]
+        self.generation = saved.get("generation", 0)
         profit = saved["profit"]
         self.profit_tracker.total_cycles = profit["cycles"]
         self.profit_tracker.total_profit = Decimal(profit["total"])

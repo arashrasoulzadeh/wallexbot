@@ -102,6 +102,7 @@ class RunManager:
                 run_name=f"paper-{symbol}",
                 app_config=config.model_dump(mode="json", by_alias=True),
                 on_alert=self.alert_hook(symbol),
+                recenter_after_minutes=setup.recenter_after_minutes,
             )
         )
         return await self._launch(engine, price_feed, symbol)

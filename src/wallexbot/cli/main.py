@@ -490,6 +490,7 @@ def cmd_paper(
             repository=repository,
             run_name=f"paper-{setup.symbol}",
             app_config=setup.app_config,
+            recenter_after_minutes=setup.recenter_after_minutes,
         )
     )
 

@@ -31,4 +31,5 @@ class EngineConfig:
     on_alert: Callable[[str, str], None] | None = (
         None  # (kind, text): halted / failed / out_of_range
     )
+    recenter_after_minutes: int | None = None  # None = never move the grid
     snapshot_every_ms: int = 30_000  # price/equity history is recorded at most this often

@@ -34,7 +34,7 @@ export WALLEXBOT_TELEGRAM_CHAT_ID="your chat id"
 wallexbot ui
 ```
 The token is read from the environment only; it is never written to a file, the database or the UI. You get a message when
-a run is halted (kill switch or risk limit), fails with an error, or the price leaves the grid range (once per exit).
+a run is halted (kill switch or risk limit), fails with an error, the price leaves the grid range (once per exit), or the grid is re-centered.
 The **Settings** page shows whether Telegram is set up and has a "send a test message" button. Alerts cover runs started
 from the dashboard (new or recovered) and `wallexbot paper`, which prints "Telegram alerts are on." when the variables are set.
 

@@ -83,6 +83,12 @@ class TradingSession:
         self.execute(actions)
         self._out_of_range = not self._in_range(price)
 
+    def rebind(self, strategy: GridStrategy, price: Decimal, timestamp: int) -> None:
+        """Replace the grid with a new one built around `price` (the old orders are already gone)."""
+        self.strategy = strategy
+        self._deferred.clear()
+        self.start(price, timestamp)
+
     def on_tick(self, price: Decimal, timestamp: int) -> list[Fill]:
         """Process one price point; returns the fills it caused."""
         self._flush_deferred()
@@ -292,9 +298,11 @@ class TradingSession:
             (a.quantity for a in actions if isinstance(a, PlaceAction) and a.side == Side.SELL),
             Decimal(0),
         )
+        market = self.exchange.market_info()
+        held = self.exchange.balances().get(market.base)
+        needed -= held.free if held else Decimal(0)  # coins we already hold need no purchase
         if needed <= 0:
             return
-        market = self.exchange.market_info()
         taker = self.exchange.fee_schedule().taker_rate
         step = market.amount_step
         # Buy a little extra so that what is left after the base-asset fee still covers the sells.

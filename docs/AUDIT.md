@@ -128,6 +128,13 @@ Items that look genuinely present: pure grid level generation/sizing/placement, 
   the list cannot be sorted by turnover; my first version sorted by it and showed zeros until the browser check caught it.
 - Still unknown: real spot minimum order and fee tier (D16/D17); the OTC minimum is only a hint.
 
+### Auto re-centering (2026-10-15)
+
+- Optional and off by default (`recenter_after_minutes`). Found while testing it: placement is idempotent by client id, so
+  the new grid's `GRID_INIT_n_1` ids matched the cancelled old orders and no order was placed; initial ids now carry a
+  generation (`GRID_G<n>_INIT_...`), saved with the strategy state. Holding coins now reduces the starting purchase.
+- A crash after a move recovers into the new range (the checkpoint's stored config is updated).
+
 ### Cleanup and coverage (2026-10-14)
 
 - Coverage is above the 90 % gate (about 91 %). New tests: the `suggest` / `optimize` / `regime` commands, the optimizer's

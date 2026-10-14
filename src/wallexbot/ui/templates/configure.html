@@ -18,10 +18,13 @@
         <div><label for="fee_maker" data-i18n="cfg.feeMaker">Maker fee</label><input id="fee_maker" inputmode="decimal"></div>
         <div><label for="fee_taker" data-i18n="cfg.feeTaker">Taker fee</label><input id="fee_taker" inputmode="decimal"></div>
         <div><label for="min_notional" data-i18n="cfg.minNotional">Minimum order value</label><input id="min_notional" inputmode="decimal"></div>
+        <div><label for="recenter_after_minutes" data-i18n="cfg.recenter">Move the grid after (minutes)</label>
+            <input id="recenter_after_minutes" type="number" min="1" step="1" placeholder="off"></div>
         <div><label for="max_drawdown" data-i18n="cfg.maxDd">Max drawdown</label><input id="max_drawdown" inputmode="decimal"></div>
         <div><label for="daily_loss_limit" data-i18n="cfg.dailyLoss">Daily loss limit</label><input id="daily_loss_limit" inputmode="decimal"></div>
     </form>
     <div class="note" data-i18n="cfg.feeNote"></div>
+    <p class="muted" data-i18n="cfg.recenterHelp"></p>
     <div id="defaults-note"></div>
     <div id="result"></div>
     <div class="actions">
@@ -42,6 +45,7 @@ wb.ready.then(async function () {
         initial_balance_quote: ['simulation', 'initial_balance_quote'],
         fee_maker: ['simulation', 'fee_maker'], fee_taker: ['simulation', 'fee_taker'],
         min_notional: ['simulation', 'min_notional'],
+        recenter_after_minutes: ['strategy', 'grid', 'recenter_after_minutes'],
         max_drawdown: ['risk', 'max_drawdown'], daily_loss_limit: ['risk', 'daily_loss_limit']
     };
 
@@ -54,13 +58,16 @@ wb.ready.then(async function () {
     let base = await wb.config.current();
 
     function fill(cfg) {
-        Object.keys(FIELDS).forEach(function (id) { $(id).value = get(cfg, FIELDS[id]); });
+        Object.keys(FIELDS).forEach(function (id) { const v = get(cfg, FIELDS[id]); $(id).value = v === null || v === undefined ? '' : v; });
     }
     function collect() {
         const cfg = JSON.parse(JSON.stringify(base));
         Object.keys(FIELDS).forEach(function (id) {
             const raw = $(id).value.trim();
-            set(cfg, FIELDS[id], id === 'grid_count' ? (raw === '' ? 0 : parseInt(raw, 10)) : raw);
+            let value = raw;
+            if (id === 'grid_count') { value = raw === '' ? 0 : parseInt(raw, 10); }
+            if (id === 'recenter_after_minutes') { value = raw === '' ? null : parseInt(raw, 10); }
+            set(cfg, FIELDS[id], value);
         });
         return cfg;
     }
