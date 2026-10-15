@@ -86,3 +86,19 @@ It prints cycles, realised profit, fees paid and total return per fee, whether t
 beat its round-trip fees with margin. Use `--resolution 240` (hourly bars) for windows longer than a day; see
 docs/wallex-api.md for why. Example, USDTTMN example grid, 14 days: 0.05 % earned about 5.1 %, 0.35 % about 4.1 %, break-even
 0.63 %. Fills are "conservative" and the result is a replay, not a forecast.
+
+
+## Does re-centering pay? `wallexbot compare`
+
+Backtests honour `recenter_after_minutes` from the config (the engine and the backtester share one trading session, so the
+move is identical in both). `compare` runs the same candles three ways and prints return, realised profit, max drawdown,
+cycles and how often the grid moved:
+
+```bash
+wallexbot compare config/grid.example.yaml --from 2026-09-15 --to 2026-10-14 --resolution 240 --recenter-after 180
+```
+
+Example, USDTTMN example grid, 30 days of hourly candles: the static grid returned 13.1 % (7 cycles), the grid that follows
+the price 8.2 % (15 cycles, 6 moves, but 95k realised against 33k), and holding the coin 16.1 %. Following the price earned
+more cycle profit and still did worse overall, because it kept re-buying coins at higher prices. Treat this as a reason to look
+at your own period before turning the option on, not as a verdict. Replays use conservative fills and are not forecasts.

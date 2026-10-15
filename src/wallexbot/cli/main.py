@@ -12,6 +12,7 @@ from typing import Any
 
 from wallexbot.alerts.setup import notifier_from_env
 from wallexbot.analytics.backtest import Backtester
+from wallexbot.analytics.compare import compare_strategies
 from wallexbot.analytics.fee_sweep import DEFAULT_FEES, break_even_fee, fee_sweep
 from wallexbot.analytics.replay import candles_to_ticks
 from wallexbot.analytics.report import (
@@ -87,6 +88,21 @@ def create_parser() -> argparse.ArgumentParser:
         help="Comma-separated per-trade fees as fractions (0.0035 = 0.35%%)",
     )
     fees_parser.add_argument("--resolution", default="60", help="Wallex candle resolution")
+
+    # compare command
+    compare_parser = subparsers.add_parser(
+        "compare", help="Static grid vs grid that follows the price vs buy and hold"
+    )
+    compare_parser.add_argument("config", help="Config YAML file")
+    compare_parser.add_argument("--from", dest="from_ts", required=True, help="Start date")
+    compare_parser.add_argument("--to", dest="to_ts", required=True, help="End date")
+    compare_parser.add_argument(
+        "--recenter-after",
+        type=int,
+        default=60,
+        help="Minutes outside the range before the moving grid follows the price (default 60)",
+    )
+    compare_parser.add_argument("--resolution", default="60", help="Wallex candle resolution")
 
     # paper command
     paper_parser = subparsers.add_parser("paper", help="Run paper trading on live prices")
@@ -200,6 +216,14 @@ def main(args: list[str] | None = None) -> int:
         elif parsed.command == "fees":
             return cmd_fees(
                 parsed.config, parsed.from_ts, parsed.to_ts, parsed.fees, parsed.resolution
+            )
+        elif parsed.command == "compare":
+            return cmd_compare(
+                parsed.config,
+                parsed.from_ts,
+                parsed.to_ts,
+                parsed.recenter_after,
+                parsed.resolution,
             )
         elif parsed.command == "paper":
             return cmd_paper(
@@ -363,6 +387,7 @@ def cmd_backtest(
         strategy=setup.new_strategy(),
         exchange=setup.new_exchange(),
         price_feed=PriceFeedReplay(candles_to_ticks(candles)),
+        recenter_after_minutes=setup.recenter_after_minutes,
     )
     try:
         result = backtester.run()
@@ -426,6 +451,50 @@ def cmd_fees(config_file: str, from_ts: str, to_ts: str, fees: str, resolution: 
     print(
         "Above it the config check refuses the grid: a cycle would not beat its fees with margin."
     )
+    return 0
+
+
+def cmd_compare(
+    config_file: str, from_ts: str, to_ts: str, recenter_after: int, resolution: str = "60"
+) -> int:
+    """Backtest the grid fixed, the grid following the price, and holding the coin."""
+    try:
+        start, end = _parse_date(from_ts), _parse_date(to_ts)
+    except ValueError:
+        print("Error: dates must be ISO dates (2024-01-31) or unix seconds")
+        return 1
+    if start >= end or recenter_after < 1:
+        print("Error: --from must be before --to, and --recenter-after at least 1 minute")
+        return 1
+    client = make_rest_client()
+    setup = _load_grid_setup(config_file, client)
+    if setup is None:
+        return 1
+    print(f"Fetching {setup.symbol} candles ({resolution}) ...")
+    candles = client.get_candles(setup.symbol, resolution, start, end)
+    if not candles:
+        print("Error: no candle data for that period")
+        return 1
+    try:
+        rows = compare_strategies(setup, candles, recenter_after)
+    except ValueError as exc:  # e.g. grid orders below the minimum size
+        print(f"Error: {exc}")
+        return 1
+    names = {
+        "static": "Static grid",
+        "recentering": f"Grid that follows the price (after {recenter_after} min)",
+        "buy_and_hold": "Buy and hold",
+    }
+    print(f"\n{setup.symbol}: three ways on the same {len(candles)} candles")
+    print(
+        f"{'':<46} {'Return':>9} {'Realized':>13} {'Max drawdown':>13} {'Cycles':>7} {'Moves':>6}"
+    )
+    for r in rows:
+        print(
+            f"{names[r.label]:<46} {r.return_pct:>8.2f}% {r.realized:>13,.2f} "
+            f"{r.max_drawdown:>12.2f}% {r.cycles:>7} {r.recenters:>6}"
+        )
+    print("Replay of past prices with conservative fills; not a forecast.")
     return 0
 
 

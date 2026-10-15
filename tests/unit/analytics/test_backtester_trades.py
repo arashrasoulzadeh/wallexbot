@@ -23,7 +23,12 @@ MARKET = Market(
 )
 
 
-def make_backtester(prices: list[str], tmn: str = "2000000", investment: str = "90000"):
+def make_backtester(
+    prices: list[str],
+    tmn: str = "2000000",
+    investment: str = "90000",
+    recenter_after_minutes: int | None = None,
+):
     params = GridParameters(
         lower_price=D("90"),
         upper_price=D("110"),
@@ -48,7 +53,10 @@ def make_backtester(prices: list[str], tmn: str = "2000000", investment: str = "
         for i, p in enumerate(prices)
     ]
     return Backtester(
-        strategy=strategy, exchange=exchange, price_feed=PriceFeedReplay(ticks)
+        strategy=strategy,
+        exchange=exchange,
+        price_feed=PriceFeedReplay(ticks),
+        recenter_after_minutes=recenter_after_minutes,
     ), exchange
 
 

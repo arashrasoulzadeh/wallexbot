@@ -9,7 +9,6 @@ FAILED (unexpected error; orders are cancelled and the error is re-raised).
 """
 
 import asyncio
-import dataclasses
 import time
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -21,11 +20,8 @@ from wallexbot.engine.config import EngineConfig
 from wallexbot.engine.recorder import RunRecorder
 from wallexbot.engine.recovery import CHECKPOINT_VERSION, RecoveryError, load_checkpoint
 from wallexbot.engine.session import TradingSession
-from wallexbot.strategy.grid.interface import GridStrategy
-from wallexbot.strategy.grid.parameters import GridMode
 from wallexbot.wallex.price_feed import PriceTick
 
-RECENTER_COOLDOWN_MS = 60 * 60_000  # at most one re-centering per hour
 STATUS_EVENTS = 20  # how many recent events a status snapshot carries
 
 
@@ -68,6 +64,7 @@ class BotEngine:
             config.exchange,
             keep_fills=config.keep_fills,
             keep_events=config.keep_events,
+            recenter_after_minutes=config.recenter_after_minutes,
         )
         self.state = EngineState.IDLE
         self.halt_reason = ""
@@ -89,8 +86,6 @@ class BotEngine:
         self._ticks_since_checkpoint = 0
         self._last_snapshot_ts: int | None = None
         self._last_snapshot_fills = 0
-        self._out_since: int | None = None  # tick time when the price left the grid range
-        self._last_recenter_ts: int | None = None
 
     # --- control --------------------------------------------------------------------
 
@@ -340,65 +335,16 @@ class BotEngine:
                 self.kill(breach)
 
     def _maybe_recenter(self, tick: PriceTick) -> None:
-        """After the price has stayed outside the range for the configured time, move the grid."""
-        minutes = self.config.recenter_after_minutes
-        if minutes is None or self.state is not EngineState.RUNNING:
+        """Let the session move the grid when due, then keep the saved config and alerts in step."""
+        if self.state is not EngineState.RUNNING:
             return
-        params = self.config.strategy.params
-        if params.lower_price <= tick.price <= params.upper_price:
-            self._out_since = None
+        moved = self.session.maybe_recenter(tick.price, tick.timestamp)
+        if moved is None:
             return
-        if self._out_since is None:
-            self._out_since = tick.timestamp
-            return
-        if tick.timestamp - self._out_since < minutes * 60_000:
-            return
-        last = self._last_recenter_ts
-        if last is not None and tick.timestamp - last < RECENTER_COOLDOWN_MS:
-            return  # a coin that keeps running away is not chased every minute
-        self._recenter(tick)
-
-    def _recenter(self, tick: PriceTick) -> None:
-        """Cancel the grid and build one of the same width around the current price.
-
-        Nothing is sold: the coins already held fund the new sell orders, and only a shortfall is
-        bought. Profit totals and order numbering carry over. The stored config is updated so a crash
-        recovers the new range, not the old one."""
-        old = self.config.strategy
-        tick_size = Decimal(1).scaleb(-old.market.price_precision)
-        if old.params.mode is GridMode.GEOMETRIC:  # keep the ratio between the bounds
-            ratio = (old.params.upper_price / old.params.lower_price).sqrt()
-            lower = max((tick.price / ratio).quantize(tick_size), tick_size)
-            upper = (tick.price * ratio).quantize(tick_size)
-        else:  # keep the width
-            half = (old.params.upper_price - old.params.lower_price) / 2
-            lower = max((tick.price - half).quantize(tick_size), tick_size)
-            upper = (tick.price + half).quantize(tick_size)
-        if upper <= lower:
-            return
-        shift = (lower + upper) / 2 - (old.params.lower_price + old.params.upper_price) / 2
-
-        def moved(level: Decimal | None) -> Decimal | None:
-            """A stop-loss / take-profit keeps its distance from the grid."""
-            return None if level is None else max(level + shift, tick_size)
-
-        params = dataclasses.replace(
-            old.params,
-            lower_price=lower,
-            upper_price=upper,
-            stop_loss_price=moved(old.params.stop_loss_price),
-            take_profit_price=moved(old.params.take_profit_price),
-        )
-        self.session.stop(tick.timestamp)
-        strategy = GridStrategy(
-            old.market, params, old.fee_schedule, old.min_notional_rule, run_id=old.run_id
-        )
-        strategy.adopt(old)
-        self.config.strategy = strategy
-        self.session.rebind(strategy, tick.price, tick.timestamp)
-        self.session._event(f"re-centered the grid around {tick.price}: {lower} - {upper}")
-        self._out_since = None
-        self._last_recenter_ts = tick.timestamp
+        lower, upper = moved
+        params = self.session.strategy.params
+        self.config.strategy = self.session.strategy
+        # the stored config must follow, or a crash would recover the old range
         grid = ((self.config.app_config or {}).get("strategy") or {}).get("grid")
         if grid is not None:
             grid["lower_price"], grid["upper_price"] = str(lower), str(upper)

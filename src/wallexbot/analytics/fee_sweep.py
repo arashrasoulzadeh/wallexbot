@@ -57,6 +57,7 @@ def fee_sweep(setup: GridSetup, candles: list[Candle], fees: list[Decimal]) -> l
             strategy=variant.new_strategy(),
             exchange=variant.new_exchange(),
             price_feed=PriceFeedReplay(candles_to_ticks(candles)),
+            recenter_after_minutes=setup.recenter_after_minutes,
         )
         try:
             m = backtester.run().metrics

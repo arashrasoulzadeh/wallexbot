@@ -449,6 +449,7 @@ class RunManager:
             strategy=setup.new_strategy(),
             exchange=setup.new_exchange(),
             price_feed=PriceFeedReplay(candles_to_ticks(candles)),
+            recenter_after_minutes=setup.recenter_after_minutes,
         ).run()
 
     # --- shutdown -------------------------------------------------------------------

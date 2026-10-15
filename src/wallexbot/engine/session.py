@@ -12,6 +12,7 @@ a live paper run behave identically:
 - placing is idempotent: an order whose client id already exists on the exchange is adopted.
 """
 
+import dataclasses
 from collections import deque
 from decimal import ROUND_UP, Decimal
 from typing import Any
@@ -28,9 +29,11 @@ from wallexbot.strategy.grid.interface import (
     PauseAction,
     PlaceAction,
 )
+from wallexbot.strategy.grid.parameters import GridMode
 
 # Each price point offers this much volume, i.e. effectively unlimited liquidity.
 UNLIMITED_VOLUME = Decimal("1000000000000")
+RECENTER_COOLDOWN_MS = 60 * 60_000  # at most one re-centering per hour
 
 
 class TradingSession:
@@ -45,6 +48,7 @@ class TradingSession:
         exchange: SimulatedExchange,
         keep_fills: int | None = None,
         keep_events: int | None = None,
+        recenter_after_minutes: int | None = None,
     ) -> None:
         """`keep_fills` / `keep_events` cap the in-memory history for runs that never end
         (a backtest keeps everything: None)."""
@@ -62,6 +66,10 @@ class TradingSession:
         self._order_ids: dict[str, str] = {}  # strategy client_id -> exchange order id
         self._deferred: deque[PlaceAction] = deque()
         self._out_of_range = False
+        self.recenter_after_minutes = recenter_after_minutes  # None = never move the grid
+        self.recenter_count = 0
+        self._out_since: int | None = None  # time the price left the grid range
+        self._last_recenter_ts: int | None = None
 
     @property
     def deferred_count(self) -> int:
@@ -88,6 +96,70 @@ class TradingSession:
         self.strategy = strategy
         self._deferred.clear()
         self.start(price, timestamp)
+
+    def maybe_recenter(self, price: Decimal, timestamp: int) -> tuple[Decimal, Decimal] | None:
+        """After the price has stayed outside the range for the configured time, move the grid.
+
+        Returns the new (lower, upper) when it moved, otherwise None. Times are the ticks' own, so a
+        backtest waits in simulated time."""
+        minutes = self.recenter_after_minutes
+        if minutes is None:
+            return None
+        params = self.strategy.params
+        if params.lower_price <= price <= params.upper_price:
+            self._out_since = None
+            return None
+        if self._out_since is None:
+            self._out_since = timestamp
+            return None
+        if timestamp - self._out_since < minutes * 60_000:
+            return None
+        last = self._last_recenter_ts
+        if last is not None and timestamp - last < RECENTER_COOLDOWN_MS:
+            return None  # a coin that keeps running away is not chased every minute
+        return self._recenter(price, timestamp)
+
+    def _recenter(self, price: Decimal, timestamp: int) -> tuple[Decimal, Decimal] | None:
+        """Cancel the grid and build one of the same width (or ratio) around `price`.
+
+        Nothing is sold: the coins already held fund the new sell orders and only a shortfall is
+        bought. Profit totals and order numbering carry over to the new grid."""
+        old = self.strategy
+        tick_size = Decimal(1).scaleb(-old.market.price_precision)
+        if old.params.mode is GridMode.GEOMETRIC:  # keep the ratio between the bounds
+            ratio = (old.params.upper_price / old.params.lower_price).sqrt()
+            lower = max((price / ratio).quantize(tick_size), tick_size)
+            upper = (price * ratio).quantize(tick_size)
+        else:  # keep the width
+            half = (old.params.upper_price - old.params.lower_price) / 2
+            lower = max((price - half).quantize(tick_size), tick_size)
+            upper = (price + half).quantize(tick_size)
+        if upper <= lower:
+            return None
+        shift = (lower + upper) / 2 - (old.params.lower_price + old.params.upper_price) / 2
+
+        def moved(level: Decimal | None) -> Decimal | None:
+            """A stop-loss / take-profit keeps its distance from the grid."""
+            return None if level is None else max(level + shift, tick_size)
+
+        params = dataclasses.replace(
+            old.params,
+            lower_price=lower,
+            upper_price=upper,
+            stop_loss_price=moved(old.params.stop_loss_price),
+            take_profit_price=moved(old.params.take_profit_price),
+        )
+        self.stop(timestamp)
+        strategy = type(old)(
+            old.market, params, old.fee_schedule, old.min_notional_rule, run_id=old.run_id
+        )
+        strategy.adopt(old)
+        self.rebind(strategy, price, timestamp)
+        self._event(f"re-centered the grid around {price}: {lower} - {upper}")
+        self._out_since = None
+        self._last_recenter_ts = timestamp
+        self.recenter_count += 1
+        return lower, upper
 
     def on_tick(self, price: Decimal, timestamp: int) -> list[Fill]:
         """Process one price point; returns the fills it caused."""

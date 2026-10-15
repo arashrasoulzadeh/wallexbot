@@ -104,7 +104,8 @@ a grid of the same width and level count around the current price.
   one (tested end to end). The risk limits (max drawdown, daily loss) keep working on the whole run.
 - It does not realise the loss on coins bought higher: moving the grid up after a rise leaves you holding them, and moving
   it down after a fall means the new sells sit below your cost. That is the nature of re-centering; watch the drawdown.
-- Paper only, off by default; an alert of kind `recentered` is sent to Telegram when it happens.
+- Paper and backtest only, off by default; an alert of kind `recentered` is sent to Telegram when it happens. Backtests honour
+  the same setting, and `wallexbot compare` shows whether it would have paid on a period.
 
 ## All Wallex coins
 

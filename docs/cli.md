@@ -39,6 +39,14 @@ wallexbot fees config/grid.example.yaml --from 2026-10-01 --to 2026-10-14 --reso
 wallexbot fees my.yaml --from 2026-10-01 --to 2026-10-14 --fees 0.001,0.0035
 ```
 
+### wallexbot compare
+Same candles three ways: a fixed grid, a grid that re-centers after `--recenter-after` minutes outside its range (default
+60), and buy and hold. See [backtesting.md](backtesting.md#does-re-centering-pay-wallexbot-compare).
+
+```bash
+wallexbot compare config/grid.example.yaml --from 2026-09-15 --to 2026-10-14 --resolution 240
+```
+
 ### wallexbot paper
 Run paper trading on live public prices.
 

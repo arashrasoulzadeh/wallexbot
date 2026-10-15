@@ -18,7 +18,7 @@ The checkboxes below were not ticked as work landed, so they understate the proj
 | Web UI (13) | Built, English and Persian: dashboard, configure, backtest, paper, market status, all coins, history, runs, settings. |
 | All Wallex coins | Every spot market, per-coin defaults assuming worst-case fees and the week's volatility. |
 | Extras (15) | Telegram alerts (env-configured), Docker files, strategy registry. Docker is packaging only, never needed for dev. |
-| Auto re-centering | Optional, paper only, crash-safe. |
+| Auto re-centering | Optional, paper and backtest, crash-safe; `wallexbot compare` judges it against a static grid and buy and hold. |
 | Hardening (11) | Partial: fuzz/property tests and 40-point crash equivalence exist; a week of paper results has not been reviewed. |
 | Intelligence (17) | Partial: indicators, suggest, optimizer, walk-forward and Monte Carlo exist behind CLI commands; adaptive decisions are not wired into the engine; no strategy comparison harness. |
 | Documentation (16) | Mostly current: paper-trading, backtesting, runbook, CLI, config reference, API notes. |

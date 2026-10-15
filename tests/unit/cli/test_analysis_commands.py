@@ -103,3 +103,30 @@ def test_fees_command_takes_its_own_list_and_rejects_nonsense(monkeypatch, capsy
     assert "0.25%" in out and "0.35%" not in out
     assert main([*base, "--fees", "abc"]) == 1
     assert "Error" in capsys.readouterr().out
+
+
+def test_compare_command_prints_the_three_strategies(monkeypatch, capsys):
+    import importlib
+    from pathlib import Path
+
+    from tests.unit.analytics.test_compare import path
+
+    cli = importlib.import_module("wallexbot.cli.main")
+    monkeypatch.setattr(cli, "make_rest_client", lambda: FakeClient(candles=path()))
+    example = Path(__file__).resolve().parents[3] / "config" / "grid.example.yaml"
+    code = main(
+        [
+            "compare",
+            str(example),
+            "--from",
+            "1700000000",
+            "--to",
+            "1700400000",
+            "--recenter-after",
+            "120",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    for word in ("Static grid", "Grid that follows the price", "Buy and hold"):
+        assert word in out

@@ -41,6 +41,7 @@ class BacktestMetrics:
     buy_and_hold_return: Decimal = Decimal("0")  # price change over the run
     outperformance: Decimal = Decimal("0")
     rejected_orders: int = 0
+    recenters: int = 0  # times the grid was moved to follow the price
 
     # Equity (quote asset) after every tick
     equity_curve: list[Decimal] = field(default_factory=list)
@@ -66,13 +67,16 @@ class Backtester:
         strategy: GridStrategy,
         exchange: SimulatedExchange,
         price_feed: PriceFeed,
+        recenter_after_minutes: int | None = None,
     ) -> None:
         self.strategy = strategy
         self.exchange = exchange
         self.price_feed = price_feed
         self._clock = ManualClock()
         self.exchange.use_clock(self._clock)  # rate limits run on simulated time
-        self.session = TradingSession(strategy, exchange)
+        self.session = TradingSession(
+            strategy, exchange, recenter_after_minutes=recenter_after_minutes
+        )
         self._last_price = Decimal(0)
         self._has_run = False
 
@@ -100,7 +104,6 @@ class Backtester:
 
         self.session.start(first.price, first.timestamp)
 
-        params = self.strategy.params
         curve: list[Decimal] = [self.session.equity(first.price)]
         in_range_time = 0
         total_time = 0
@@ -110,10 +113,12 @@ class Backtester:
             self._last_price = tick.price
             span = tick.timestamp - previous.timestamp
             total_time += span
+            params = self.session.strategy.params  # the grid may have moved
             if params.lower_price <= tick.price <= params.upper_price:
                 in_range_time += span
 
             self.session.on_tick(tick.price, tick.timestamp)
+            self.session.maybe_recenter(tick.price, tick.timestamp)
             curve.append(self.session.equity(tick.price))
 
         metrics = self._metrics(initial_equity, curve, first.price, in_range_time, total_time)
@@ -145,7 +150,7 @@ class Backtester:
             if peak > 0:
                 max_dd = max(max_dd, (peak - equity) / peak * 100)
 
-        tracker = self.strategy.profit_tracker
+        tracker = self.session.strategy.profit_tracker
         realized = tracker.total_profit
         cycles = tracker.total_cycles
         buy_hold = (self._last_price / first_price - 1) * 100 if first_price > 0 else Decimal(0)
@@ -165,5 +170,6 @@ class Backtester:
             buy_and_hold_return=buy_hold,
             outperformance=total_return - buy_hold,
             rejected_orders=self.session.rejected,
+            recenters=self.session.recenter_count,
             equity_curve=curve,
         )
