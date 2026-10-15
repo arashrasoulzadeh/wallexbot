@@ -12,6 +12,7 @@ from typing import Any
 
 from wallexbot.alerts.setup import notifier_from_env
 from wallexbot.analytics.backtest import Backtester
+from wallexbot.analytics.fee_sweep import DEFAULT_FEES, break_even_fee, fee_sweep
 from wallexbot.analytics.replay import candles_to_ticks
 from wallexbot.analytics.report import (
     format_engine_status,
@@ -72,6 +73,20 @@ def create_parser() -> argparse.ArgumentParser:
         help="Wallex candle resolution (default 60 = hourly). Note: the API returns 1-minute "
         "bars for 15 and hourly bars for 240; see docs/wallex-api.md",
     )
+
+    # fees command
+    fees_parser = subparsers.add_parser(
+        "fees", help="Backtest one grid at several fee tiers and show the break-even fee"
+    )
+    fees_parser.add_argument("config", help="Config YAML file")
+    fees_parser.add_argument("--from", dest="from_ts", required=True, help="Start date")
+    fees_parser.add_argument("--to", dest="to_ts", required=True, help="End date")
+    fees_parser.add_argument(
+        "--fees",
+        default=",".join(str(f) for f in DEFAULT_FEES),
+        help="Comma-separated per-trade fees as fractions (0.0035 = 0.35%%)",
+    )
+    fees_parser.add_argument("--resolution", default="60", help="Wallex candle resolution")
 
     # paper command
     paper_parser = subparsers.add_parser("paper", help="Run paper trading on live prices")
@@ -181,6 +196,10 @@ def main(args: list[str] | None = None) -> int:
         elif parsed.command == "backtest":
             return cmd_backtest(
                 parsed.config, parsed.from_ts, parsed.to_ts, parsed.output, parsed.resolution
+            )
+        elif parsed.command == "fees":
+            return cmd_fees(
+                parsed.config, parsed.from_ts, parsed.to_ts, parsed.fees, parsed.resolution
             )
         elif parsed.command == "paper":
             return cmd_paper(
@@ -365,6 +384,48 @@ def cmd_backtest(
             encoding="utf-8",
         )
         print(f"Report written to {output}")
+    return 0
+
+
+def cmd_fees(config_file: str, from_ts: str, to_ts: str, fees: str, resolution: str = "60") -> int:
+    """Show what the configured grid earns at each fee tier on public candles."""
+    try:
+        start, end = _parse_date(from_ts), _parse_date(to_ts)
+        tiers = [Decimal(f.strip()) for f in fees.split(",") if f.strip()]
+        if not tiers or any(f < 0 or f >= 1 for f in tiers):
+            raise ValueError
+    except (ValueError, ArithmeticError):
+        print("Error: dates must be ISO dates or unix seconds, and --fees a list like 0.001,0.0035")
+        return 1
+    if start >= end:
+        print("Error: --from must be before --to")
+        return 1
+
+    client = make_rest_client()
+    setup = _load_grid_setup(config_file, client)
+    if setup is None:
+        return 1
+    print(f"Fetching {setup.symbol} candles ({resolution}) ...")
+    candles = client.get_candles(setup.symbol, resolution, start, end)
+    if not candles:
+        print("Error: no candle data for that period")
+        return 1
+
+    rows = fee_sweep(setup, candles, tiers)
+    if not rows:
+        print("Error: the grid could not start (orders below the minimum size)")
+        return 1
+    print(f"\n{setup.symbol}: the same grid at different fee tiers ({len(candles)} candles)")
+    print(f"{'Fee':>7} {'Check':>6} {'Cycles':>7} {'Realized':>14} {'Fees paid':>14} {'Return':>9}")
+    for r in rows:
+        print(
+            f"{r.fee:>7.2%} {'ok' if r.clears_break_even else 'FAILS':>6} {r.cycles:>7} "
+            f"{r.realized:>14,.2f} {r.fees_paid:>14,.2f} {r.total_return_pct:>8.2f}%"
+        )
+    print(f"\nBreak-even fee for this grid: {break_even_fee(setup.params):.2%} per trade")
+    print(
+        "Above it the config check refuses the grid: a cycle would not beat its fees with margin."
+    )
     return 0
 
 

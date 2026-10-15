@@ -70,3 +70,19 @@ inside the candle.
 - A single buy/sell cycle's profit matches an independent calculation from the ledger fills.
 - Two fresh runs on the same data give identical results.
 - Underfunded grids count rejected orders instead of crashing.
+
+
+## Fee tiers: `wallexbot fees`
+
+The real Wallex fee is only visible with an API key, so run the same grid at several fees instead of trusting one number:
+
+```bash
+wallexbot fees config/grid.example.yaml --from 2026-10-01 --to 2026-10-14 --resolution 240
+wallexbot fees my.yaml --from ... --to ... --fees 0.001,0.0025,0.0035   # your own tiers (fractions)
+```
+
+It prints cycles, realised profit, fees paid and total return per fee, whether the config check accepts that fee, and the
+**break-even fee** for the grid: spacing / (2 x 1.5). Above it the config check refuses the grid, because a cycle would not
+beat its round-trip fees with margin. Use `--resolution 240` (hourly bars) for windows longer than a day; see
+docs/wallex-api.md for why. Example, USDTTMN example grid, 14 days: 0.05 % earned about 5.1 %, 0.35 % about 4.1 %, break-even
+0.63 %. Fills are "conservative" and the result is a replay, not a forecast.

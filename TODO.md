@@ -608,5 +608,5 @@ Resolved (2026-10-10):
   - **Key risk found:** a grid level spacing of about 0.1% only profits if round-trip fees are below that. The Wallex fee rate is only visible via the authenticated `/v1/account/fee` endpoint, so it is unknown without a key. Until known, the sim treats fees as a config value and the config validator (4.3) must refuse grids whose spacing is under 2x the maker fee plus margin.
 
 Still open:
-- [ ] D16 (Phase 4): actual Wallex maker/taker fee for USDTTMN. Without API keys, find it from Wallex's public fee-schedule page or support; until then run backtests across a fee range (for example 0.05% to 0.35%) and report break-even spacing.
+- [ ] D16 (Phase 4): actual Wallex maker/taker fee for USDTTMN. (`wallexbot fees` now backtests a grid across a fee range and prints the break-even; the true tier is still unknown.) Without API keys, find it from Wallex's public fee-schedule page or support; until then run backtests across a fee range (for example 0.05% to 0.35%) and report break-even spacing.
 - [ ] D17 (Phase 3/5): real spot minimum order size/notional; confirm with Wallex support, keep 90,000 TMN placeholder meanwhile.

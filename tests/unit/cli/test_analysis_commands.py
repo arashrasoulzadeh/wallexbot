@@ -74,3 +74,32 @@ def test_no_candles_is_reported_not_crashed(argv, capsys):
     with patch("wallexbot.wallex.client.WallexRestClient", return_value=client):
         assert main(argv) == 1
     assert "No candle data" in capsys.readouterr().out
+
+
+def test_fees_command_shows_each_tier_and_the_break_even(monkeypatch, capsys):
+    import importlib
+    from pathlib import Path
+
+    cli = importlib.import_module("wallexbot.cli.main")
+    monkeypatch.setattr(cli, "make_rest_client", lambda: FakeClient(candles=swinging_candles(60)))
+    example = Path(__file__).resolve().parents[3] / "config" / "grid.example.yaml"
+    code = main(["fees", str(example), "--from", "1700000000", "--to", "1700300000"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "0.05%" in out and "0.35%" in out  # the default tiers
+    assert "Break-even fee" in out and "0.63%" in out
+
+
+def test_fees_command_takes_its_own_list_and_rejects_nonsense(monkeypatch, capsys):
+    import importlib
+    from pathlib import Path
+
+    cli = importlib.import_module("wallexbot.cli.main")
+    monkeypatch.setattr(cli, "make_rest_client", lambda: FakeClient(candles=swinging_candles(60)))
+    example = Path(__file__).resolve().parents[3] / "config" / "grid.example.yaml"
+    base = ["fees", str(example), "--from", "1700000000", "--to", "1700300000"]
+    assert main([*base, "--fees", "0.001,0.0025"]) == 0
+    out = capsys.readouterr().out
+    assert "0.25%" in out and "0.35%" not in out
+    assert main([*base, "--fees", "abc"]) == 1
+    assert "Error" in capsys.readouterr().out
