@@ -41,3 +41,16 @@ def test_a_fresh_exchange_and_strategy_each_time():
     assert a is not b
     assert a.balances()["TMN"].free == D("2000000") and a.balances()["USDT"].free == 0
     assert setup.new_strategy() is not setup.new_strategy()
+
+
+def test_stop_loss_take_profit_and_fixed_quantity_are_not_dropped():
+    """Regression: from_config built the grid without these, so the config options did nothing."""
+    from wallexbot.config.schema import validate_config
+
+    raw = load_config(str(EXAMPLE)).model_dump(mode="json", by_alias=True)
+    grid = raw["strategy"]["grid"]
+    grid.update(stop_loss_price="240000", take_profit_price="290000", per_grid_qty="1.5")
+    setup = GridSetup.from_config(validate_config(raw), find_market(FakeClient(), "USDTTMN"))
+    assert setup.params.stop_loss_price == D("240000")
+    assert setup.params.take_profit_price == D("290000")
+    assert setup.params.per_grid_qty == D("1.5")

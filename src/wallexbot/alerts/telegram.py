@@ -1,6 +1,7 @@
 """Telegram notifier for alerts."""
 
 import asyncio
+import html
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -84,7 +85,7 @@ class TelegramNotifier:
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         data = {
             "chat_id": self.chat_id,
-            "text": message,
+            "text": html.escape(message),  # parse_mode is HTML: stray < > & would be rejected
             "parse_mode": "HTML",
         }
 

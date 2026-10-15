@@ -72,6 +72,9 @@ def make_engine(
     on_alert=None,
     recenter_after_minutes=None,
     app_config=None,
+    mode=GridMode.ARITHMETIC,
+    stop_loss=None,
+    take_profit=None,
 ):
     clock = FakeClock()
     exchange = SimulatedExchange(
@@ -88,8 +91,10 @@ def make_engine(
         lower_price=D("90"),
         upper_price=D("110"),
         grid_count=grid_count,
-        mode=GridMode.ARITHMETIC,
+        mode=mode,
         total_investment=D(investment),
+        stop_loss_price=stop_loss,
+        take_profit_price=take_profit,
     )
     engine = BotEngine(
         EngineConfig(

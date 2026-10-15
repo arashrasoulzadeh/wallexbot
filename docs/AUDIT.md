@@ -147,3 +147,15 @@ Items that look genuinely present: pure grid level generation/sizing/placement, 
 - **Removed:** the unauthenticated `/api/admin/backup|vacuum|backup-history` endpoints (unused; they touched files in the
   current directory, not the database in use) and the old unused `analytics/history.py` and `analytics/api.py`.
 - **Added:** Telegram alerts (env-configured, off by default) and the Settings page; defaults now assume worst-case fees.
+
+### Bug hunt (2026-10-15)
+
+- **Config options silently ignored (fixed):** `GridSetup.from_config` built the grid without `stop_loss_price`,
+  `take_profit_price` and `per_grid_qty`, so setting them did nothing. They are passed through now. A stop-loss or
+  take-profit trigger raises a pause event and an alert; it does not sell anything.
+- **Telegram alerts could be lost (fixed):** messages are posted with `parse_mode=HTML` and were not escaped, so an error
+  text containing `<`, `>` or `&` made Telegram reject the alert. Messages are escaped now.
+- **Re-centering edge cases (fixed):** a geometric grid now keeps its bound ratio (not its width), and stop-loss /
+  take-profit move with the grid, both live and in the stored config used for crash recovery.
+- A live smoke test (generated defaults for USDTTMN and DOGETMN, a poll-feed paper run on real prices, stop) found
+  nothing else.

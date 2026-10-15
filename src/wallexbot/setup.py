@@ -70,6 +70,13 @@ class GridSetup:
                 grid_count=grid.grid_count,
                 mode=grid.mode,
                 total_investment=Decimal(grid.total_investment),
+                per_grid_qty=None if grid.per_grid_qty is None else Decimal(grid.per_grid_qty),
+                stop_loss_price=None
+                if grid.stop_loss_price is None
+                else Decimal(grid.stop_loss_price),
+                take_profit_price=None
+                if grid.take_profit_price is None
+                else Decimal(grid.take_profit_price),
             ),
             fees=FeeSchedule(maker_rate=maker, taker_rate=taker),
             min_rule=MinNotionalRule(

@@ -151,3 +151,54 @@ async def test_a_crash_after_a_re_centering_recovers_into_the_new_range():
     assert rebuilt.config.recenter_after_minutes == 3
     assert rebuilt.config.strategy.generation == 1  # next re-centering gets fresh order ids
     assert rebuilt.config.exchange.open_orders()  # and the new grid's orders are still there
+
+
+async def test_a_geometric_grid_keeps_its_ratio_when_it_moves():
+    from wallexbot.strategy.grid.parameters import GridMode
+
+    engine, _, _ = make_engine(
+        ScriptedFeed(["100"] + OUT), recenter_after_minutes=3, mode=GridMode.GEOMETRIC
+    )
+    await engine.run()
+    lows, highs = levels(engine)[0], levels(engine)[-1]
+    assert abs(highs / lows - D("110") / D("90")) < D("0.01")  # same ratio, not same width
+    assert lows < D("150") < highs
+
+
+async def test_stop_loss_and_take_profit_move_with_the_grid():
+    engine, _, _ = make_engine(
+        ScriptedFeed(["100"] + OUT),
+        recenter_after_minutes=3,
+        stop_loss=D("85"),
+        take_profit=D("115"),
+    )
+    await engine.run()
+    p = engine.config.strategy.params
+    shift = (p.lower_price + p.upper_price) / 2 - D("100")
+    assert p.stop_loss_price == D("85") + shift and p.take_profit_price == D("115") + shift
+
+
+async def test_the_saved_config_also_gets_the_moved_stop_loss():
+    repo = InMemoryRepository()
+    app_config = {
+        "strategy": {
+            "grid": {
+                "lower_price": "90",
+                "upper_price": "110",
+                "grid_count": 9,
+                "stop_loss_price": "85",
+                "take_profit_price": None,
+            }
+        }
+    }
+    engine, _, _ = make_engine(
+        ScriptedFeed(["100"] + OUT),
+        recenter_after_minutes=3,
+        repository=repo,
+        app_config=app_config,
+        stop_loss=D("85"),
+    )
+    await engine.run()
+    saved = repo.get_checkpoint(engine.run_id)["app_config"]["strategy"]["grid"]
+    assert D(saved["stop_loss_price"]) == engine.config.strategy.params.stop_loss_price > D("100")
+    assert saved["take_profit_price"] is None

@@ -22,6 +22,7 @@ from wallexbot.engine.recorder import RunRecorder
 from wallexbot.engine.recovery import CHECKPOINT_VERSION, RecoveryError, load_checkpoint
 from wallexbot.engine.session import TradingSession
 from wallexbot.strategy.grid.interface import GridStrategy
+from wallexbot.strategy.grid.parameters import GridMode
 from wallexbot.wallex.price_feed import PriceTick
 
 RECENTER_COOLDOWN_MS = 60 * 60_000  # at most one re-centering per hour
@@ -365,12 +366,29 @@ class BotEngine:
         recovers the new range, not the old one."""
         old = self.config.strategy
         tick_size = Decimal(1).scaleb(-old.market.price_precision)
-        half = (old.params.upper_price - old.params.lower_price) / 2
-        lower = max((tick.price - half).quantize(tick_size), tick_size)
-        upper = (tick.price + half).quantize(tick_size)
+        if old.params.mode is GridMode.GEOMETRIC:  # keep the ratio between the bounds
+            ratio = (old.params.upper_price / old.params.lower_price).sqrt()
+            lower = max((tick.price / ratio).quantize(tick_size), tick_size)
+            upper = (tick.price * ratio).quantize(tick_size)
+        else:  # keep the width
+            half = (old.params.upper_price - old.params.lower_price) / 2
+            lower = max((tick.price - half).quantize(tick_size), tick_size)
+            upper = (tick.price + half).quantize(tick_size)
         if upper <= lower:
             return
-        params = dataclasses.replace(old.params, lower_price=lower, upper_price=upper)
+        shift = (lower + upper) / 2 - (old.params.lower_price + old.params.upper_price) / 2
+
+        def moved(level: Decimal | None) -> Decimal | None:
+            """A stop-loss / take-profit keeps its distance from the grid."""
+            return None if level is None else max(level + shift, tick_size)
+
+        params = dataclasses.replace(
+            old.params,
+            lower_price=lower,
+            upper_price=upper,
+            stop_loss_price=moved(old.params.stop_loss_price),
+            take_profit_price=moved(old.params.take_profit_price),
+        )
         self.session.stop(tick.timestamp)
         strategy = GridStrategy(
             old.market, params, old.fee_schedule, old.min_notional_rule, run_id=old.run_id
@@ -384,6 +402,12 @@ class BotEngine:
         grid = ((self.config.app_config or {}).get("strategy") or {}).get("grid")
         if grid is not None:
             grid["lower_price"], grid["upper_price"] = str(lower), str(upper)
+            for key, value in (
+                ("stop_loss_price", params.stop_loss_price),
+                ("take_profit_price", params.take_profit_price),
+            ):
+                if value is not None and grid.get(key) is not None:
+                    grid[key] = str(value)
         self._alert("recentered", f"grid moved to {lower} - {upper} around {tick.price}")
         self._save_checkpoint()
 
