@@ -24,12 +24,11 @@ All configuration is in YAML format. See `config/grid.example.yaml` for a comple
 | upper_price | string | Yes | - | Grid upper bound |
 | grid_count | integer | Yes | - | Number of levels (≥2) |
 | mode | string | No | "arithmetic" | "arithmetic" or "geometric" |
-| total_investment | string | Yes* | - | Quote currency to invest |
-| per_grid_qty | string | No | - | Fixed base qty per level (alt to total_investment) |
-| stop_loss_price | string | No | - | Stop loss trigger |
-| take_profit_price | string | No | - | Take profit trigger |
-
-*Either `total_investment` or `per_grid_qty` must be specified.
+| total_investment | string | Yes | - | Quote currency to invest |
+| per_grid_qty | string | No | - | Fixed base quantity per level instead of splitting `total_investment` evenly (the minimum-order check is then up to the exchange) |
+| stop_loss_price | string | No | - | When the price falls to this, the run logs a pause event and sends an alert. It does not sell anything |
+| take_profit_price | string | No | - | Same, when the price rises to this |
+| recenter_after_minutes | integer ≥ 1 | No | off | Paper only: once the price has stayed outside the range this long, rebuild the grid (same width, or same ratio for geometric) around the price, at most once an hour. See paper-trading.md |
 
 ## risk
 

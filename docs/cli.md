@@ -30,6 +30,15 @@ Run backtest on historical data.
 wallexbot backtest config/grid.example.yaml --from 2024-01-01 --to 2024-01-31 --output report.md
 ```
 
+### wallexbot fees
+Backtest one grid at several fee tiers and print the break-even fee (the real Wallex fee needs an API key, so
+this replaces guessing). See [backtesting.md](backtesting.md#fee-tiers-wallexbot-fees).
+
+```bash
+wallexbot fees config/grid.example.yaml --from 2026-10-01 --to 2026-10-14 --resolution 240
+wallexbot fees my.yaml --from 2026-10-01 --to 2026-10-14 --fees 0.001,0.0035
+```
+
 ### wallexbot paper
 Run paper trading on live public prices.
 
@@ -56,7 +65,7 @@ wallexbot ui --host 127.0.0.1 --port 8080
 Then open http://127.0.0.1:8080 in browser.
 
 ### wallexbot suggest
-Get intelligent grid suggestions.
+Get intelligent grid suggestions from the last 14 days of hourly candles.
 
 ```bash
 wallexbot suggest --market USDTTMN --capital 2000000
@@ -70,7 +79,7 @@ wallexbot optimize --market USDTTMN --from 2024-01-01 --to 2024-06-30
 ```
 
 ### wallexbot regime
-Check current market regime.
+Check the current market regime from the last 14 days of hourly candles.
 
 ```bash
 wallexbot regime --market USDTTMN

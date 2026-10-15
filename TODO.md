@@ -2,6 +2,31 @@
 
 Reference docs (offline): [docs/wallex-api.md](docs/wallex-api.md) (summary), [docs/offline/INDEX.md](docs/offline/INDEX.md) (full mirror + Swagger).
 
+## Status (2026-10-15)
+
+The checkboxes below were not ticked as work landed, so they understate the project. This block is the honest summary;
+[docs/AUDIT.md](docs/AUDIT.md) has the dated log of bugs found and fixed. Everything is paper trading on public data.
+
+| Area | State |
+|---|---|
+| Domain, strategy core, simulated exchange, config (Phases 2-5) | Built and tested; ledger, fees and ladder rule were rewritten after the audit. |
+| Public Wallex client and feeds (6) | Built against recorded real responses; REST and WebSocket, reconnect, polling fallback. |
+| Engine, backtester (7, 8) | Built; the backtester and the engine share one trading session. |
+| Persistence and crash recovery (9) | Built (SQLite, checkpoints, replay of downtime, tested at 40 crash points and with a real SIGKILL). |
+| CLI, reports (10) | Built: markets, config, fetch-candles, backtest, fees, paper (`--resume`), report, ui, suggest, optimize, regime. |
+| History and analytics (14) | Built: equity and price charts with trade markers, daily results, trades, CSV, per-run summaries. |
+| Web UI (13) | Built, English and Persian: dashboard, configure, backtest, paper, market status, all coins, history, runs, settings. |
+| All Wallex coins | Every spot market, per-coin defaults assuming worst-case fees and the week's volatility. |
+| Extras (15) | Telegram alerts (env-configured), Docker files, strategy registry. Docker is packaging only, never needed for dev. |
+| Auto re-centering | Optional, paper only, crash-safe. |
+| Hardening (11) | Partial: fuzz/property tests and 40-point crash equivalence exist; a week of paper results has not been reviewed. |
+| Intelligence (17) | Partial: indicators, suggest, optimizer, walk-forward and Monte Carlo exist behind CLI commands; adaptive decisions are not wired into the engine; no strategy comparison harness. |
+| Documentation (16) | Mostly current: paper-trading, backtesting, runbook, CLI, config reference, API notes. |
+| Live trading (12) | Not built and not planned without the user lifting the no-API-key rule. |
+
+Open questions that only the user can answer: the real Wallex fee tier and minimum order (D16/D17), and whether live trading
+is ever wanted. Coverage is above the 90 % gate.
+
 ## 0. Ground rules
 
 - **No API keys, ever, in this roadmap.** All phases use only public endpoints (markets, depth, trades, candles, public WebSocket) plus a local simulated exchange. Real trading is a *separate future roadmap* (Phase 12 is a design stub only, nothing in it is built or enabled).
