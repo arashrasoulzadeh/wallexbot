@@ -110,6 +110,7 @@ def test_every_translation_key_used_by_the_pages_exists(i18n):
     used |= {f"mk.state.{s}" for s in ("inside", "below", "above")}
     used |= {f"mk.trend.{s}" for s in ("sideways", "up", "down", "unclear")}
     used |= {f"mk.dir.{s}" for s in ("up", "down")}
+    used |= {f"bt.cmp.{s}" for s in ("static", "recentering", "buy_and_hold")}
     used |= {"mk.w.outside_range.above", "mk.w.outside_range.below"}
     used |= {
         f"mk.w.{c}"

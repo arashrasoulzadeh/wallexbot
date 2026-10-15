@@ -445,18 +445,69 @@ def create_app(
         to_ts: int
         resolution: str = "60"
 
-    @app.post("/api/backtests")
-    async def start_backtest(request: BacktestRequest) -> Any:
+    def _checked_backtest(request: BacktestRequest) -> Any:
+        """The validated config of a backtest-style request; 422 when it or the window is wrong."""
         try:
             config = validate_config(request.config)
         except ValidationError as e:
             raise HTTPException(422, detail=_validation_errors(e)) from e
         if request.from_ts >= request.to_ts:
             raise HTTPException(422, detail="from_ts must be before to_ts")
+        return config
+
+    @app.post("/api/backtests")
+    async def start_backtest(request: BacktestRequest) -> Any:
+        config = _checked_backtest(request)
         bt_id = await manager.start_backtest(
             config, request.from_ts, request.to_ts, request.resolution
         )
         return {"id": bt_id}
+
+    class CompareRequest(BacktestRequest):
+        recenter_after_minutes: int = 60
+
+    @app.post("/api/backtests/compare")
+    async def compare_backtest(request: CompareRequest) -> Any:
+        """The same candles with a fixed grid, a grid that follows the price, and holding."""
+        config = _checked_backtest(request)
+        if request.recenter_after_minutes < 1:
+            raise HTTPException(422, detail="recenter_after_minutes must be at least 1")
+        try:
+            return await manager.compare(
+                config,
+                request.from_ts,
+                request.to_ts,
+                request.resolution,
+                request.recenter_after_minutes,
+            )
+        except ValueError as e:
+            raise HTTPException(422, detail=str(e)) from e
+        except (WallexApiError, httpx.HTTPError, OSError) as e:
+            raise HTTPException(502, str(e)) from e
+
+    class FeesRequest(BacktestRequest):
+        fees: list[str] = ["0.0005", "0.001", "0.002", "0.0035"]
+
+    @app.post("/api/backtests/fees")
+    async def fee_backtest(request: FeesRequest) -> Any:
+        """The same grid at several fee tiers, and the break-even fee."""
+        config = _checked_backtest(request)
+        try:
+            tiers = [Decimal(f) for f in request.fees]
+            if not tiers or any(not (Decimal(0) <= t < 1) for t in tiers):
+                raise ValueError
+        except (ValueError, ArithmeticError) as e:
+            raise HTTPException(
+                422, detail="each fee must be a number from 0 up to 1 (0.0035 = 0.35%)"
+            ) from e
+        try:
+            return await manager.fee_tiers(
+                config, request.from_ts, request.to_ts, request.resolution, tiers
+            )
+        except ValueError as e:
+            raise HTTPException(422, detail=str(e)) from e
+        except (WallexApiError, httpx.HTTPError, OSError) as e:
+            raise HTTPException(502, str(e)) from e
 
     @app.get("/api/backtests/{bt_id}")
     async def get_backtest(bt_id: str) -> Any:

@@ -19,6 +19,8 @@ import httpx
 
 from wallexbot.alerts.setup import notifier_from_env
 from wallexbot.analytics.backtest import Backtester, BacktestResult
+from wallexbot.analytics.compare import compare_strategies
+from wallexbot.analytics.fee_sweep import break_even_fee, fee_sweep
 from wallexbot.analytics.market_status import build_market_status, jsonable
 from wallexbot.analytics.replay import candles_to_ticks
 from wallexbot.analytics.week_stats import week_stats
@@ -451,6 +453,59 @@ class RunManager:
             price_feed=PriceFeedReplay(candles_to_ticks(candles)),
             recenter_after_minutes=setup.recenter_after_minutes,
         ).run()
+
+    # --- backtest tools --------------------------------------------------------------
+
+    def _setup_and_candles(
+        self, config: Config, from_ts: int, to_ts: int, resolution: str
+    ) -> tuple[GridSetup, list[Any]]:
+        client = self._client_factory()
+        symbol = str(config.market.symbol)
+        info = find_market(client, symbol)
+        if info is None:
+            raise ValueError(f"market {symbol} not found (is it a spot market?)")
+        candles = client.get_candles(symbol, resolution, from_ts, to_ts)
+        if not candles:
+            raise ValueError("no candle data for that period")
+        return GridSetup.from_config(config, info), candles
+
+    async def compare(
+        self, config: Config, from_ts: int, to_ts: int, resolution: str, recenter_after: int
+    ) -> dict[str, Any]:
+        """Static grid vs grid that follows the price vs buy and hold on the same candles."""
+
+        def work() -> dict[str, Any]:
+            setup, candles = self._setup_and_candles(config, from_ts, to_ts, resolution)
+            rows = compare_strategies(setup, candles, recenter_after)
+            return {
+                "symbol": setup.symbol,
+                "candles": len(candles),
+                "recenter_after_minutes": recenter_after,
+                "rows": [dataclasses.asdict(r) for r in rows],
+            }
+
+        result: dict[str, Any] = jsonable(await asyncio.to_thread(work))
+        return result
+
+    async def fee_tiers(
+        self, config: Config, from_ts: int, to_ts: int, resolution: str, fees: list[Decimal]
+    ) -> dict[str, Any]:
+        """The same grid at several fee tiers, plus the fee above which it is refused."""
+
+        def work() -> dict[str, Any]:
+            setup, candles = self._setup_and_candles(config, from_ts, to_ts, resolution)
+            rows = fee_sweep(setup, candles, fees)
+            if not rows:
+                raise ValueError("the grid could not start (orders below the minimum size)")
+            return {
+                "symbol": setup.symbol,
+                "candles": len(candles),
+                "break_even_fee": break_even_fee(setup.params),
+                "rows": [dataclasses.asdict(r) for r in rows],
+            }
+
+        result: dict[str, Any] = jsonable(await asyncio.to_thread(work))
+        return result
 
     # --- shutdown -------------------------------------------------------------------
 

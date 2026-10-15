@@ -90,6 +90,9 @@ docs/wallex-api.md for why. Example, USDTTMN example grid, 14 days: 0.05 % earne
 
 ## Does re-centering pay? `wallexbot compare`
 
+(Both `compare` and `fees` are also buttons on the Backtest page of the web UI: `POST /api/backtests/compare` and
+`POST /api/backtests/fees`.)
+
 Backtests honour `recenter_after_minutes` from the config (the engine and the backtester share one trading session, so the
 move is identical in both). `compare` runs the same candles three ways and prints return, realised profit, max drawdown,
 cycles and how often the grid moved:

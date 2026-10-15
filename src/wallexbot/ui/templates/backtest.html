@@ -16,11 +16,20 @@
                 <option value="1D">1 day</option>
             </select></div>
     </div>
-    <div class="actions"><button id="run" type="button" data-i18n="bt.run">Run backtest</button></div>
+    <div class="actions">
+        <button id="run" type="button" data-i18n="bt.run">Run backtest</button>
+        <button id="compare" type="button" class="secondary" data-i18n="bt.compare">Compare with holding and re-centering</button>
+        <button id="fees" type="button" class="secondary" data-i18n="bt.fees">Fee tiers</button>
+    </div>
+    <div class="form-grid">
+        <div><label for="wait" data-i18n="bt.wait">Re-center wait for the comparison (minutes)</label>
+            <input id="wait" type="number" min="1" step="1" value="60"></div>
+    </div>
     <div id="status"></div>
 </div>
 
 <div id="output"></div>
+<div id="tools"></div>
 <p class="muted" data-i18n="bt.limits"></p>
 
 <script>
@@ -88,7 +97,82 @@ wb.ready.then(async function () {
         }
     }
 
+    /* the two extra tools: three strategies side by side, and fee tiers */
+    let tool = null;   // what is on screen, so a language switch can redraw it
+
+    function toolTable(head, rows) {
+        const table = wb.el('table', {});
+        const tr = wb.el('tr', {});
+        head.forEach(function (h) { tr.appendChild(wb.el('th', { class: h[1] || '', text: wb.t(h[0]) })); });
+        table.appendChild(wb.el('thead', {}, tr));
+        const body = wb.el('tbody', {});
+        rows.forEach(function (cells) {
+            const row = wb.el('tr', {});
+            cells.forEach(function (c, i) {
+                row.appendChild(wb.el('td', { class: ((head[i][1] || '') + ' ' + (c.cls || '')).trim(), text: c.text !== undefined ? c.text : String(c) }));
+            });
+            body.appendChild(row);
+        });
+        table.appendChild(body);
+        return wb.el('div', { class: 'scroll' }, table);
+    }
+
+    function drawTool() {
+        const box = wb.clear($('tools'));
+        if (!tool) { return; }
+        const card = wb.el('div', { class: 'card' });
+        if (tool.kind === 'compare') {
+            const d = tool.data;
+            card.appendChild(wb.el('h2', { text: wb.t('bt.cmp.title') }));
+            card.appendChild(toolTable(
+                [['bt.cmp.strategy'], ['m.totalReturn', 'num'], ['m.realized', 'num'], ['m.maxDd', 'num'], ['m.cycles', 'num'], ['bt.cmp.moves', 'num']],
+                d.rows.map(function (r) {
+                    return [wb.t('bt.cmp.' + r.label), { text: wb.pct(r.return_pct), cls: wb.signClass(r.return_pct) },
+                        wb.num(r.realized, 2), wb.num(r.max_drawdown, 2) + '%', r.cycles, r.recenters];
+                })));
+            card.appendChild(wb.el('p', { class: 'muted', text: wb.t('bt.cmp.note', { minutes: d.recenter_after_minutes, candles: d.candles }) }));
+        } else {
+            const d = tool.data;
+            card.appendChild(wb.el('h2', { text: wb.t('bt.fee.title') }));
+            card.appendChild(toolTable(
+                [['bt.fee.fee', 'num'], ['bt.fee.check'], ['m.cycles', 'num'], ['m.realized', 'num'], ['m.fees', 'num'], ['m.totalReturn', 'num']],
+                d.rows.map(function (r) {
+                    return [wb.num(Number(r.fee) * 100, 3) + '%', wb.t(r.clears_break_even ? 'bt.fee.ok' : 'bt.fee.fails'),
+                        r.cycles, wb.num(r.realized, 2), wb.num(r.fees_paid, 2),
+                        { text: wb.pct(r.total_return_pct), cls: wb.signClass(r.total_return_pct) }];
+                })));
+            card.appendChild(wb.el('p', { text: wb.t('bt.fee.breakEven', { fee: wb.num(Number(d.break_even_fee) * 100, 2) }) }));
+            card.appendChild(wb.el('p', { class: 'muted', text: wb.t('bt.fee.note') }));
+        }
+        box.appendChild(card);
+    }
+
+    async function runTool(kind, path, extra) {
+        const status = wb.clear($('status'));
+        wb.clear($('output')); tool = null; drawTool();
+        const from = Math.floor(new Date($('from').value + 'T00:00:00Z').getTime() / 1000);
+        const to = Math.floor(new Date($('to').value + 'T23:59:59Z').getTime() / 1000);
+        ['run', 'compare', 'fees'].forEach(function (id) { $(id).disabled = true; });
+        status.appendChild(wb.el('p', { class: 'muted', text: wb.t('bt.running') }));
+        try {
+            const body = Object.assign({ config: config, from_ts: from, to_ts: to, resolution: $('resolution').value }, extra);
+            tool = { kind: kind, data: await wb.post(path, body) };
+            wb.clear(status);
+            drawTool();
+        } catch (e) {
+            wb.clear(status);
+            status.appendChild(wb.el('div', { class: 'error', text: e.message }));
+        } finally { ['run', 'compare', 'fees'].forEach(function (id) { $(id).disabled = false; }); }
+    }
+
+    $('compare').addEventListener('click', function () {
+        runTool('compare', '/api/backtests/compare', { recenter_after_minutes: parseInt($('wait').value, 10) || 60 });
+    });
+    $('fees').addEventListener('click', function () { runTool('fees', '/api/backtests/fees', {}); });
+    document.addEventListener('wb:lang', drawTool);
+
     $('run').addEventListener('click', async function () {
+        tool = null; drawTool();
         const status = wb.clear($('status'));
         wb.clear($('output'));
         const from = Math.floor(new Date($('from').value + 'T00:00:00Z').getTime() / 1000);
