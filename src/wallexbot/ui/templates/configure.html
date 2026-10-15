@@ -18,6 +18,10 @@
         <div><label for="fee_maker" data-i18n="cfg.feeMaker">Maker fee</label><input id="fee_maker" inputmode="decimal"></div>
         <div><label for="fee_taker" data-i18n="cfg.feeTaker">Taker fee</label><input id="fee_taker" inputmode="decimal"></div>
         <div><label for="min_notional" data-i18n="cfg.minNotional">Minimum order value</label><input id="min_notional" inputmode="decimal"></div>
+        <div><label for="stop_loss_price" data-i18n="cfg.stopLoss">Stop-loss alert price</label>
+            <input id="stop_loss_price" inputmode="decimal" placeholder="off"></div>
+        <div><label for="take_profit_price" data-i18n="cfg.takeProfit">Take-profit alert price</label>
+            <input id="take_profit_price" inputmode="decimal" placeholder="off"></div>
         <div><label for="recenter_after_minutes" data-i18n="cfg.recenter">Move the grid after (minutes)</label>
             <input id="recenter_after_minutes" type="number" min="1" step="1" placeholder="off"></div>
         <div><label for="max_drawdown" data-i18n="cfg.maxDd">Max drawdown</label><input id="max_drawdown" inputmode="decimal"></div>
@@ -25,6 +29,7 @@
     </form>
     <div class="note" data-i18n="cfg.feeNote"></div>
     <p class="muted" data-i18n="cfg.recenterHelp"></p>
+    <p class="muted" data-i18n="cfg.stopHelp"></p>
     <div id="defaults-note"></div>
     <div id="result"></div>
     <div class="actions">
@@ -46,6 +51,8 @@ wb.ready.then(async function () {
         fee_maker: ['simulation', 'fee_maker'], fee_taker: ['simulation', 'fee_taker'],
         min_notional: ['simulation', 'min_notional'],
         recenter_after_minutes: ['strategy', 'grid', 'recenter_after_minutes'],
+        stop_loss_price: ['strategy', 'grid', 'stop_loss_price'],
+        take_profit_price: ['strategy', 'grid', 'take_profit_price'],
         max_drawdown: ['risk', 'max_drawdown'], daily_loss_limit: ['risk', 'daily_loss_limit']
     };
 
@@ -67,6 +74,7 @@ wb.ready.then(async function () {
             let value = raw;
             if (id === 'grid_count') { value = raw === '' ? 0 : parseInt(raw, 10); }
             if (id === 'recenter_after_minutes') { value = raw === '' ? null : parseInt(raw, 10); }
+            if (id === 'stop_loss_price' || id === 'take_profit_price') { value = raw === '' ? null : raw; }
             set(cfg, FIELDS[id], value);
         });
         return cfg;

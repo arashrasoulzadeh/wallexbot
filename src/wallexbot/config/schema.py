@@ -97,6 +97,22 @@ class GridStrategyConfig(BaseModel):
             raise ValueError("total_investment must be positive")
         if self.per_grid_qty is not None and Decimal(self.per_grid_qty) <= 0:
             raise ValueError("per_grid_qty must be positive")
+        for name, text in (
+            ("stop_loss_price", self.stop_loss_price),
+            ("take_profit_price", self.take_profit_price),
+        ):
+            if text is None:
+                continue
+            try:
+                level = Decimal(text)
+            except ArithmeticError:
+                level = Decimal(0)
+            if not level.is_finite() or level <= 0:
+                raise ValueError(f"{name} must be a positive number")
+            if name == "stop_loss_price" and level >= lower:
+                raise ValueError(f"stop_loss_price must be below lower_price ({lower})")
+            if name == "take_profit_price" and level <= upper:
+                raise ValueError(f"take_profit_price must be above upper_price ({upper})")
 
         return self
 
