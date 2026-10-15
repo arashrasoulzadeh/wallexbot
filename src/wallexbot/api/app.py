@@ -1,6 +1,7 @@
 """FastAPI backend for the web UI (paper trading and backtests only; no API keys)."""
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.websockets import WebSocketDisconnect
 
 from wallexbot.alerts.setup import ALERT_KINDS
+from wallexbot.analytics.review import review, start_point
 from wallexbot.analytics.run_history import (
     DEFAULT_TZ,
     Point,
@@ -291,27 +293,7 @@ def create_app(
         return base
 
     def _start_point(run_id: str, points: list[Point], since: int | None) -> Point | None:
-        """Where a summary is measured from: the last snapshot before the range, or else the
-        run's starting state (initial equity before the entry fee, nothing earned or paid yet)."""
-        if since is not None:
-            before = parse_snapshots(repo.get_snapshots(run_id, until=since - 1)[-1:])
-            if before:
-                return before[0]
-        checkpoint = repo.get_checkpoint(run_id)
-        initial = ((checkpoint or {}).get("engine") or {}).get("initial_equity")
-        if initial is None or not points:
-            return None  # nothing better than the first snapshot
-        first = points[0]
-        return Point(
-            ts=first.ts,
-            price=first.price,
-            equity=Decimal(str(initial)),
-            realized=Decimal(0),
-            fees=Decimal(0),
-            open_orders=0,
-            fills=0,
-            cycles=0,
-        )
+        return start_point(repo, run_id, points, since)
 
     @app.get("/api/history/runs")
     async def history_runs() -> Any:
@@ -323,6 +305,11 @@ def create_app(
             rows.append(run_summary(base, points, repo.get_fills(run["id"]), start))
         rows.sort(key=lambda r: r["started_at"], reverse=True)
         return _jsonable(rows)
+
+    @app.get("/api/review")
+    async def review_runs(days: int = Query(7, ge=1, le=90)) -> Any:
+        """Every run of the last `days` days, added up, with caveats about how much it proves."""
+        return _jsonable(review(repo, int(time.time() * 1000), days))
 
     @app.get("/api/history/runs/{run_id}")
     async def history_run(

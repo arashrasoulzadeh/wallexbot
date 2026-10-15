@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from wallexbot.analytics.report import (
     format_summary,
     render_markdown,
 )
+from wallexbot.analytics.review import review
 from wallexbot.config.schema import load_config
 from wallexbot.engine import BotEngine, EngineConfig
 from wallexbot.engine.recovery import RecoveryError, recoverable_runs
@@ -103,6 +105,15 @@ def create_parser() -> argparse.ArgumentParser:
         help="Minutes outside the range before the moving grid follows the price (default 60)",
     )
     compare_parser.add_argument("--resolution", default="60", help="Wallex candle resolution")
+
+    # review command
+    review_parser = subparsers.add_parser(
+        "review", help="Summarise the recent paper runs in a database (no advice)"
+    )
+    review_parser.add_argument(
+        "--db", required=True, help="SQLite database the runs were recorded in"
+    )
+    review_parser.add_argument("--days", type=int, default=7, help="How many days back (default 7)")
 
     # paper command
     paper_parser = subparsers.add_parser("paper", help="Run paper trading on live prices")
@@ -225,6 +236,8 @@ def main(args: list[str] | None = None) -> int:
                 parsed.recenter_after,
                 parsed.resolution,
             )
+        elif parsed.command == "review":
+            return cmd_review(parsed.db, parsed.days)
         elif parsed.command == "paper":
             return cmd_paper(
                 parsed.config,
@@ -495,6 +508,59 @@ def cmd_compare(
             f"{r.max_drawdown:>12.2f}% {r.cycles:>7} {r.recenters:>6}"
         )
     print("Replay of past prices with conservative fills; not a forecast.")
+    return 0
+
+
+def _tehran_time(ms: int) -> str:
+    """A start time as 'YYYY-MM-DD HH:MM' in Tehran time (UTC+03:30, decision D15)."""
+    tehran = timezone(timedelta(hours=3, minutes=30))
+    return datetime.fromtimestamp(int(ms) / 1000, tz=tehran).strftime("%Y-%m-%d %H:%M")
+
+
+def cmd_review(db: str, days: int = 7) -> int:
+    """Print every paper run of the last `days` days with totals and honest caveats."""
+    if not Path(db).exists():
+        print(f"Error: database {db} not found")
+        return 1
+    if days < 1:
+        print("Error: --days must be at least 1")
+        return 1
+    repository = SQLiteRepository(db)
+    try:
+        result = review(repository, int(time.time() * 1000), days)
+    finally:
+        repository.close()
+    runs, totals = result["runs"], result["totals"]
+    if not runs:
+        print(f"No runs started in the last {days} days in {db}.")
+        return 0
+    print(f"Paper runs of the last {days} days ({db})")
+    print(
+        f"{'Started (Tehran)':<17} {'Market':<9} {'Hours':>6} {'Return':>8} {'Holding':>8} {'Realized':>12} {'Cycles':>6}"
+    )
+    for r in runs:
+        hours = Decimal(r["duration_ms"]) / 3_600_000
+        print(
+            f"{_tehran_time(r['started_at']):<17} {r['market']:<9} {hours:>6.1f} {r['return_pct']:>7.2f}% "
+            f"{r['price_change_pct']:>7.2f}% {r['realized']:>12,.2f} {r['cycles']:>6}"
+        )
+    print(
+        f"Total: {totals['runs']} runs, {totals['hours']:.1f} h of price history, "
+        f"{totals['cycles']} cycles, {totals['fills']} fills, realized {totals['realized']:,.2f}, "
+        f"fees {totals['fees']:,.2f}, worst drawdown {totals['worst_drawdown_pct']:.2f}%"
+    )
+    print(f"{totals['beat_holding']} of {totals['runs']} runs beat simply holding the coin.")
+    for note in result["notes"]:
+        p = note["params"]
+        if note["code"] == "short_coverage":
+            print(
+                f"Note: the runs cover {p['hours']:.1f} h of the {p['wanted']} h you asked for; too short to judge."
+            )
+        elif note["code"] == "few_cycles":
+            print(
+                f"Note: only {p['cycles']} completed cycles (about {p['needed']} are needed before the profit means much)."
+            )
+    print("This is a summary, not advice: whether to continue is your decision.")
     return 0
 
 

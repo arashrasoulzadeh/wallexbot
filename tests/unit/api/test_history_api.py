@@ -281,3 +281,11 @@ def test_a_real_paper_run_appears_in_history_and_matches_its_own_status():
         (D(live["equity"]) - D(live["initial_equity"])) / D(live["initial_equity"]) * 100
     )
     assert D(s["return_pct"]) == engine_return  # History agrees with the engine, entry fee included
+
+
+def test_the_review_endpoint_summarises_the_recent_runs(client):
+    body = client.get("/api/review?days=7").json()
+    assert body["days"] == 7 and {"runs", "totals", "notes"} <= set(body)
+    assert body["totals"]["runs"] == len(body["runs"])
+    assert client.get("/api/review?days=0").status_code == 422
+    assert client.get("/api/review?days=400").status_code == 422

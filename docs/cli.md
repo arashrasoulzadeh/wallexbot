@@ -47,6 +47,16 @@ Same candles three ways: a fixed grid, a grid that re-centers after `--recenter-
 wallexbot compare config/grid.example.yaml --from 2026-09-15 --to 2026-10-14 --resolution 240
 ```
 
+### wallexbot review
+Summarise the paper runs of the last N days recorded in a database: one row per run (start time in Tehran time, hours of
+price history, return, what simply holding the coin did, realised profit, cycles), totals, and how many runs beat holding.
+It says when the evidence is too thin (the runs cover much less than the period, or fewer than about 10 completed
+cycles) and never advises. Also `GET /api/review?days=7`.
+
+```bash
+wallexbot review --db reports/ui.db --days 7
+```
+
 ### wallexbot paper
 Run paper trading on live public prices.
 

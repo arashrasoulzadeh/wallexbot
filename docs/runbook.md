@@ -51,6 +51,13 @@ Automatic: a risk limit (`risk.max_drawdown`, `risk.daily_loss_limit`) cancels e
 the run, and says why in the summary. By hand: the **Kill switch** button on the Paper trading page
 (or `POST /api/runs/{id}/kill`, or `engine.kill("reason")` in code).
 
+## Reviewing a week of paper results
+
+Before trusting a grid with anything real, run it on live prices for a week (`wallexbot ui --db runs.db`, or `paper --db`),
+then `wallexbot review --db runs.db --days 7`. Read the notes it prints: a few hours of price history or a handful of cycles
+prove very little, and a week that happened to trend or range says nothing about the next one. Compare each run with
+"Holding" (what the coin itself did) and with the fees paid.
+
 ## Crash recovery
 
 A paper run saves a **checkpoint** (the whole state of its simulated exchange, grid, balances and
