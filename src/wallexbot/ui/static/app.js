@@ -3,6 +3,7 @@
 (function () {
   'use strict';
 
+  const LRM = '\u200E';
   const KEYS = { lang: 'wb.lang', config: 'wb.config', paperRun: 'wb.paperRun' };
 
   function read(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
@@ -92,19 +93,20 @@
     clear(node) { while (node.firstChild) { node.removeChild(node.firstChild); } return node; },
 
     /* Number formatting for display only (the server keeps exact decimals). */
+    /* A left-to-right mark in front keeps a sign with its number on right-to-left pages. */
     num(value, maxFraction) {
       if (value === null || value === undefined || value === '') { return '--'; }
       const n = Number(value);
       if (!isFinite(n)) { return String(value); }
       if (n !== 0 && Math.abs(n) < 0.01) {   // tiny prices (meme coins): significant digits, not decimals
-        return n.toLocaleString('en-US', { maximumSignificantDigits: 4, maximumFractionDigits: 12 });
+        return LRM + n.toLocaleString('en-US', { maximumSignificantDigits: 4, maximumFractionDigits: 12 });
       }
-      return n.toLocaleString('en-US', { maximumFractionDigits: maxFraction === undefined ? 2 : maxFraction });
+      return LRM + n.toLocaleString('en-US', { maximumFractionDigits: maxFraction === undefined ? 2 : maxFraction });
     },
     pct(value, digits) {
       if (value === null || value === undefined) { return '--'; }
       const n = Number(value);
-      return (n >= 0 ? '+' : '') + n.toFixed(digits === undefined ? 2 : digits) + '%';
+      return LRM + (n >= 0 ? '+' : '') + n.toFixed(digits === undefined ? 2 : digits) + '%';
     },
     signClass(value) { const n = Number(value); return n > 0 ? 'pos' : (n < 0 ? 'neg' : ''); },
     /* Times are shown in Tehran time (decision D15); everything is stored in UTC. */
@@ -213,7 +215,7 @@
 
   function sortKey(cell) {
     const attr = cell.getAttribute('data-sort');
-    const text = (attr !== null ? attr : cell.textContent).trim();
+    const text = (attr !== null ? attr : cell.textContent).replace(/\u200E/g, '').trim();
     if (text === '' || text === '-' || text === '--') { return null; }
     const m = NUMBER.exec(text.replace(/,/g, ''));
     return m ? Number(m[1]) : text.toLowerCase();

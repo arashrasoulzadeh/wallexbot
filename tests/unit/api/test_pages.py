@@ -192,3 +192,11 @@ def test_tables_sort_by_column_and_the_ladder_keeps_its_order(client):
     assert 'aria-sort="ascending"' in client.get("/static/app.css").text or "aria-sort" in (
         client.get("/static/app.css").text
     )
+
+
+def test_signed_numbers_keep_their_sign_on_the_right_to_left_pages(client):
+    """Regression: '-0.89%' rendered as '0.89%-' in Persian. Formatters lead with a left-to-right
+    mark, and sorting must ignore it."""
+    js = client.get("/static/app.js").text
+    assert js.count("LRM +") >= 3  # num (two paths) and pct
+    assert "replace(/\\u200E/g" in js  # the table sorter strips it before parsing
